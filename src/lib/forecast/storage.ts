@@ -38,7 +38,7 @@ export function getForecastPath() {
 }
 
 /** True when Vercel Blob credentials are available (static token or OIDC). */
-export function useBlobStorage() {
+export function isBlobStorageEnabled() {
   return Boolean(
     process.env.BLOB_READ_WRITE_TOKEN ||
       process.env.BLOB_STORE_ID ||
@@ -464,7 +464,7 @@ async function clearDisk(): Promise<void> {
 }
 
 export async function readStoredForecast(): Promise<GfcForecast | null> {
-  if (useBlobStorage()) {
+  if (isBlobStorageEnabled()) {
     const fromBlob = await readFromBlob();
     if (fromBlob.kind === "cleared") return null;
     if (fromBlob.kind === "forecast") return fromBlob.forecast;
@@ -478,7 +478,7 @@ export async function readStoredForecast(): Promise<GfcForecast | null> {
 }
 
 export async function writeStoredForecast(forecast: GfcForecast): Promise<void> {
-  if (useBlobStorage()) {
+  if (isBlobStorageEnabled()) {
     await writeToBlob(forecast);
     if (process.env.VERCEL) {
       try {
@@ -504,7 +504,7 @@ export async function writeStoredForecast(forecast: GfcForecast): Promise<void> 
 }
 
 export async function clearStoredForecast(): Promise<void> {
-  if (useBlobStorage()) {
+  if (isBlobStorageEnabled()) {
     try {
       await clearBlob();
     } catch (error) {

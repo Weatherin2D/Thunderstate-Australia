@@ -209,8 +209,32 @@ export function OutlookMap({ mapView, features, legend: _legend }: OutlookMapPro
   const [fullscreenTarget, setFullscreenTarget] = useState<HTMLElement | null>(
     null,
   );
+  const [outline, setOutline] = useState<GeoJSON.GeoJsonObject | null>(null);
   useEffect(() => {
     setFullscreenTarget(shellRef.current);
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/geo/australia-outline.geojson", {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Australia outline request failed (${response.status})`,
+          );
+        }
+        const data = (await response.json()) as GeoJSON.GeoJsonObject;
+        if (!controller.signal.aborted) setOutline(data);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Failed to load the Australia outline.", error);
+      }
+    })();
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   const byKey = useMemo(() => {
@@ -326,7 +350,22 @@ export function OutlookMap({ mapView, features, legend: _legend }: OutlookMapPro
           url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
           attribution="Tiles &copy; Esri"
           maxZoom={16}
+          keepBuffer={16}
+          updateWhenZooming={false}
         />
+        {outline ? (
+          <GeoJSON
+            key="au-land-fill"
+            data={outline}
+            interactive={false}
+            style={{
+              fillColor: "#d9dde3",
+              fillOpacity: 0.95,
+              color: "transparent",
+              weight: 0,
+            }}
+          />
+        ) : null}
         <FitFeatures features={features} mapView={mapView} />
         <GeoJSON
           key={features.map((f) => `${f.id}:${f.categoryId}:${f.title}`).join(",") || "empty"}
@@ -334,6 +373,20 @@ export function OutlookMap({ mapView, features, legend: _legend }: OutlookMapPro
           style={styleFn}
           onEachFeature={onEachFeature}
         />
+        {outline ? (
+          <GeoJSON
+            key="au-coast-outline"
+            data={outline}
+            interactive={false}
+            style={{
+              color: "#ffffff",
+              weight: 2,
+              opacity: 1,
+              fillColor: "transparent",
+              fillOpacity: 0,
+            }}
+          />
+        ) : null}
       </MapContainer>
     </div>
   );

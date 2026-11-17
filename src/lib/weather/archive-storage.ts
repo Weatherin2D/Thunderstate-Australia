@@ -87,7 +87,7 @@ function blobConfigured(): boolean {
   );
 }
 
-function useBlobStorage() {
+function isBlobStorageEnabled() {
   return blobConfigured() && !blobDisabled;
 }
 
@@ -417,7 +417,7 @@ async function putBlobBytes(
   contentType: string,
   overwrite = true,
 ): Promise<boolean> {
-  if (!useBlobStorage()) return false;
+  if (!isBlobStorageEnabled()) return false;
   const errors: string[] = [];
   for (const access of preferredAccessOrder()) {
     try {
@@ -445,7 +445,7 @@ async function putBlobBytes(
 }
 
 async function getBlobBytes(pathname: string): Promise<Buffer | null> {
-  if (!useBlobStorage()) return null;
+  if (!isBlobStorageEnabled()) return null;
   for (const access of preferredAccessOrder()) {
     try {
       const result = await get(pathname, { access, useCache: false });
@@ -467,7 +467,7 @@ async function getBlobBytes(pathname: string): Promise<Buffer | null> {
 async function listBlobPrefix(
   prefix: string,
 ): Promise<{ pathname: string; size: number }[]> {
-  if (!useBlobStorage()) return [];
+  if (!isBlobStorageEnabled()) return [];
   try {
     const out: { pathname: string; size: number }[] = [];
     let cursor: string | undefined;
@@ -1060,7 +1060,7 @@ export function demoteProducts(
 
 export function archiveStorageMode(): ArchiveStorageMode {
   if (redisConfigured()) return "redis";
-  return useBlobStorage() ? "blob" : "local";
+  return isBlobStorageEnabled() ? "blob" : "local";
 }
 
 export function archiveBlobDisableReason(): string | null {

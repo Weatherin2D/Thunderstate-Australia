@@ -29,7 +29,7 @@ import {
 } from "@/lib/weather/blitzortung-parse";
 import { fetchLightningMapsBackfill } from "@/lib/weather/lightningmaps-backfill";
 import { fetchBlitzortungGeoJsonBackfill } from "@/lib/weather/blitzortung-geojson-backfill";
-import { useHobbyBudget } from "@/lib/runtime-budget";
+import { isHobbyBudget } from "@/lib/runtime-budget";
 
 /** Prefer hosts that reliably accept the public subscribe handshake. */
 const WS_HOSTS = [
@@ -345,7 +345,7 @@ export function ensureLightningFeed() {
   // Hobby / Vercel: skip long-lived WS/MQTT + interval backfills. Serverless
   // instances die quickly; timers only burn Active CPU. Request path awaits
   // a single HTTP backfill instead (see getLiveLightningSnapshot).
-  if (useHobbyBudget()) {
+  if (isHobbyBudget()) {
     state.pruneTimer = setInterval(() => prune(state), 60_000);
     return;
   }
@@ -443,7 +443,7 @@ function westernStrikeCount(state: GlobalFeed) {
 export async function getLiveLightningSnapshot(): Promise<LiveLightningSnapshot> {
   ensureLightningFeed();
   const state = getState();
-  const hobby = useHobbyBudget();
+  const hobby = isHobbyBudget();
   const needsAwait =
     state.strikes.size < 25 || westernStrikeCount(state) < 3;
   if (needsAwait) {

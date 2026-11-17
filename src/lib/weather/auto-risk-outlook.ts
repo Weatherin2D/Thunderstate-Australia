@@ -50,7 +50,7 @@ import {
   aestPartsToUnix,
   unixToAestParts,
 } from "@/lib/weather/archive-time";
-import { useHobbyBudget } from "@/lib/runtime-budget";
+import { isHobbyBudget } from "@/lib/runtime-budget";
 import { promises as fs } from "fs";
 import path from "path";
 import { get as blobGet, put as blobPut } from "@vercel/blob";
@@ -62,7 +62,7 @@ const CACHE_MS = 20 * 60_000;
 /** Empty/failed outlooks must not stick for the full cache window. */
 const EMPTY_CACHE_MS = 90_000;
 /** Hobby: coarse grid + tight budget. Local/full: denser mesh for smoother maps. */
-const HOBBY = useHobbyBudget();
+const HOBBY = isHobbyBudget();
 /** Open-Meteo multi-location batches — keep under Vercel 60s budget. */
 const BATCH = HOBBY ? 50 : 40;
 /** Keep modest concurrency to limit Open-Meteo 429s from Vercel egress. */

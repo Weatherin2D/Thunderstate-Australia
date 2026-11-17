@@ -74,7 +74,7 @@ type BlobAccess = "public" | "private";
 let blobDisabled = false;
 let blobDisableReason: string | null = null;
 
-function useBlobStorage() {
+function isBlobStorageEnabled() {
   return blobConfigured() && !blobDisabled;
 }
 
@@ -149,7 +149,7 @@ async function putBlobBytes(
   body: Buffer | string,
   contentType: string,
 ): Promise<boolean> {
-  if (!useBlobStorage()) return false;
+  if (!isBlobStorageEnabled()) return false;
   const errors: string[] = [];
   for (const access of preferredAccessOrder()) {
     try {
@@ -177,7 +177,7 @@ async function putBlobBytes(
 }
 
 async function getBlobBytes(pathname: string): Promise<Buffer | null> {
-  if (!useBlobStorage()) return null;
+  if (!isBlobStorageEnabled()) return null;
   for (const access of preferredAccessOrder()) {
     try {
       const result = await get(pathname, { access, useCache: false });
@@ -197,7 +197,7 @@ async function getBlobBytes(pathname: string): Promise<Buffer | null> {
 }
 
 async function deleteBlobBytes(pathname: string): Promise<void> {
-  if (!useBlobStorage()) return;
+  if (!isBlobStorageEnabled()) return;
   try {
     await del(pathname);
   } catch (error) {
@@ -212,7 +212,7 @@ async function deleteBlobBytes(pathname: string): Promise<void> {
 async function listBlobPrefix(
   prefix: string,
 ): Promise<{ pathname: string }[]> {
-  if (!useBlobStorage()) return [];
+  if (!isBlobStorageEnabled()) return [];
   try {
     const out: { pathname: string }[] = [];
     let cursor: string | undefined;
@@ -536,12 +536,12 @@ async function redisGetImage(
 /* ---------------- Blob/local helpers ---------------- */
 
 async function blobLocalListPosts(): Promise<CommunityPost[]> {
-  const files = useBlobStorage()
+  const files = isBlobStorageEnabled()
     ? await listBlobPrefix(POSTS_PREFIX)
     : await listLocalPrefix(POSTS_PREFIX);
   // If blob list empty/failed and we're in local/dev, also scan local.
   const localFiles =
-    !isVercelRuntime() && useBlobStorage()
+    !isVercelRuntime() && isBlobStorageEnabled()
       ? await listLocalPrefix(POSTS_PREFIX)
       : [];
   const seen = new Set<string>();
@@ -649,7 +649,7 @@ export async function listCommunityPosts(): Promise<CommunityPost[]> {
   if (backend === "redis") {
     const posts = await redisListPosts();
     // Also merge any still-present blob/local posts (migration window).
-    if (useBlobStorage() || !isVercelRuntime()) {
+    if (isBlobStorageEnabled() || !isVercelRuntime()) {
       const extras = await blobLocalListPosts();
       const ids = new Set(posts.map((p) => p.id));
       for (const p of extras) {
@@ -857,7 +857,7 @@ export async function createCommunityPost(
     if (backend === "redis") {
       await redisWritePost(post, prepared, { addToIndex: true });
       // Best-effort mirror to Blob when healthy (extra durability).
-      if (useBlobStorage()) {
+      if (isBlobStorageEnabled()) {
         void blobLocalWritePost(post, prepared).catch(() => undefined);
       }
     } else {
@@ -883,7 +883,7 @@ async function persistPostUpdate(post: CommunityPost): Promise<MutateResult> {
   try {
     if (backend === "redis") {
       await redisWritePost(post);
-      if (useBlobStorage()) {
+      if (isBlobStorageEnabled()) {
         void blobLocalWritePost(post).catch(() => undefined);
       }
     } else {

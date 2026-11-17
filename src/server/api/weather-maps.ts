@@ -18,12 +18,12 @@ import {
   type WeatherFrame,
   type WeatherMapsPayload,
 } from "@/lib/weather/maps";
-import { warmFramesInBackground } from "@/lib/weather/fetch-frame";
+import { isRealEarthDisabled, warmFramesInBackground } from "@/lib/weather/fetch-frame";
 import { warmRadarFramesInBackground } from "@/lib/weather/warm-radar-tiles";
 import {
   allowBackgroundWarm,
-  useDirectRadarTiles,
-  useHobbyBudget,
+  isDirectRadarTilesEnabled,
+  isHobbyBudget,
 } from "@/lib/runtime-budget";
 
 export const dynamic = "force-dynamic";
@@ -31,8 +31,8 @@ export const revalidate = 0;
 
 const RAINVIEWER_URL = "https://api.rainviewer.com/public/weather-maps.json";
 const GIBS_STEP_MS = HIMAWARI_STEP_SEC * 1000;
-const GIBS_PROBE_MAX = useHobbyBudget() ? 8 : 18;
-const GIBS_PROBE_BATCH = useHobbyBudget() ? 2 : 4;
+const GIBS_PROBE_MAX = isHobbyBudget() ? 8 : 18;
+const GIBS_PROBE_BATCH = isHobbyBudget() ? 2 : 4;
 const GIBS_PROBE_WIDTH = 96;
 const FRAME_COUNT = SATELLITE_FRAME_COUNT;
 
@@ -172,7 +172,7 @@ function normalizeRainviewerFrames(
   kind: "satellite" | "radar",
 ): WeatherFrame[] {
   if (!frames?.length) return [];
-  const directRadar = kind === "radar" && useDirectRadarTiles();
+  const directRadar = kind === "radar" && isDirectRadarTilesEnabled();
   return frames.map((f) => ({
     time: f.time,
     path: f.path,
@@ -191,7 +191,7 @@ async function buildProductFrames(
     return buildFramesFromTimes(meta.id, sharedTimelineUnix);
   }
 
-  if (meta.realearthProduct) {
+  if (!isRealEarthDisabled() && meta.realearthProduct) {
     const native = await fetchRealEarthTimes(meta.realearthProduct, FRAME_COUNT);
     if (native.length >= 3) {
       const tip = native[native.length - 1]!;
@@ -220,7 +220,7 @@ async function buildAllSatelliteProducts(): Promise<{
 
   const infraredMeta = getSatelliteProduct("infrared");
   const infraredTimes =
-    infraredMeta.realearthProduct != null
+    !isRealEarthDisabled() && infraredMeta.realearthProduct != null
       ? await fetchRealEarthTimes(infraredMeta.realearthProduct, FRAME_COUNT)
       : [];
 
@@ -310,7 +310,7 @@ export async function GET(request: NextRequest) {
       : await (async () => {
           const products = emptyProductFrames();
           const meta = getSatelliteProduct(product);
-          const native = meta.realearthProduct
+          const native = !isRealEarthDisabled() && meta.realearthProduct
             ? await fetchRealEarthTimes(meta.realearthProduct, FRAME_COUNT)
             : [];
           const gibsLatestMs =
@@ -346,7 +346,7 @@ export async function GET(request: NextRequest) {
 
     // Hobby: never warm radar tiles server-side (recolour × hundreds of tiles
     // was the main Active CPU burn). Full compute can opt in via SKYWATCH_WARM.
-    if (allowBackgroundWarm() && !useDirectRadarTiles()) {
+    if (allowBackgroundWarm() && !isDirectRadarTilesEnabled()) {
       warmRadarFramesInBackground(
         radarAll.slice(-2).flatMap((f) =>
           f.path ? [{ host, path: f.path }] : [],
@@ -369,7 +369,7 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    const mapsCache = useHobbyBudget()
+    const mapsCache = isHobbyBudget()
       ? "public, s-maxage=120, stale-while-revalidate=300"
       : "public, s-maxage=60, stale-while-revalidate=120";
 

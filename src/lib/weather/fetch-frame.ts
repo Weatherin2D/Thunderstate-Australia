@@ -22,9 +22,18 @@ import { getCachedFrame, setCachedFrame } from "@/lib/weather/frame-cache";
 
 const MIN_FRAME_BYTES = 8_000;
 const HIMAWARI_STEP_SEC = 10 * 60;
-const FETCH_ATTEMPTS = 3;
-const PANEL_FETCH_ATTEMPTS = 3;
+const FETCH_ATTEMPTS = 1;
+const PANEL_FETCH_ATTEMPTS = 2;
 const PANEL_CONCURRENCY = 2;
+const REAL_EARTH_FAILURE_COOLDOWN_MS = 60_000;
+let realEarthDisabledUntil = 0;
+export function isRealEarthDisabled(): boolean {
+  return Date.now() < realEarthDisabledUntil;
+}
+
+function deferRealEarthAfterNetworkError(): void {
+  realEarthDisabledUntil = Date.now() + REAL_EARTH_FAILURE_COOLDOWN_MS;
+}
 
 function gibsUrlFor(
   product: SatelliteProductId,
@@ -290,7 +299,11 @@ function frameHasRealContent(body: Buffer): boolean {
 
 async function fetchUpstreamOnce(
   upstream: string,
-  options?: { rejectSizeLimitOverlay?: boolean; timeoutMs?: number },
+  options?: {
+    rejectSizeLimitOverlay?: boolean;
+    timeoutMs?: number;
+    onNetworkError?: () => void;
+  },
 ): Promise<{ body: Buffer; contentType: string } | null> {
   try {
     const res = await fetch(upstream, {
@@ -299,7 +312,7 @@ async function fetchUpstreamOnce(
         Accept: "image/png,image/*;q=0.9,*/*;q=0.1",
       },
       cache: "no-store",
-      signal: AbortSignal.timeout(options?.timeoutMs ?? 45_000),
+      signal: AbortSignal.timeout(options?.timeoutMs ?? 8_000),
     });
     if (!res.ok) return null;
     const contentType = res.headers.get("content-type") ?? "image/png";
@@ -310,7 +323,11 @@ async function fetchUpstreamOnce(
       return null;
     }
     return { body, contentType };
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.name + ' ' + e.message : String(e);
+    if (/abort|timeout|fetch failed|network|ENOTFOUND|ECONN|EAI_AGAIN/i.test(msg)) {
+      options?.onNetworkError?.();
+    }
     return null;
   }
 }
@@ -460,13 +477,14 @@ async function fetchRealEarthPanel(
   const aspect = boundsMercatorAspect(bounds);
   let { width, height } = clampPanelSize(preferWidth, aspect);
 
-  for (let shrink = 0; shrink < 3; shrink++) {
+  for (let shrink = 0; shrink < 2; shrink++) {
     const url = realEarthUrlAtSize(product, timeUnix, bounds, width, height);
     if (!url) break;
     for (let attempt = 0; attempt < PANEL_FETCH_ATTEMPTS; attempt++) {
       const got = await fetchUpstreamOnce(url, {
         rejectSizeLimitOverlay: true,
         timeoutMs: 12_000,
+        onNetworkError: deferRealEarthAfterNetworkError,
       });
       if (got) {
         try {
@@ -664,12 +682,13 @@ async function fetchRealEarthClean(
     return fetchRealEarthStitched(product, timeUnix, bounds);
   }
 
-  for (const width of realEarthWidthLadder(bounds)) {
+  for (const width of realEarthWidthLadder(bounds).slice(0, 2)) {
     const url = realEarthUrlAtSize(product, timeUnix, bounds, width);
     if (!url) return null;
     for (let attempt = 0; attempt < FETCH_ATTEMPTS; attempt++) {
       const got = await fetchUpstreamOnce(url, {
         rejectSizeLimitOverlay: true,
+        onNetworkError: deferRealEarthAfterNetworkError,
       });
       if (!got) {
         if (attempt < FETCH_ATTEMPTS - 1) {
@@ -732,7 +751,7 @@ async function fetchUpstreamWithRetry(
 ): Promise<{ body: Buffer; contentType: string } | null> {
   const meta = getSatelliteProduct(product);
 
-  if (meta.realearthProduct) {
+  if (!isRealEarthDisabled() && meta.realearthProduct) {
     const re = await fetchRealEarthClean(product, timeUnix, bounds, region);
     if (re) return re;
   }
@@ -760,7 +779,7 @@ export async function fetchAndCacheFrame(
 }
 
 /**
- * Exact time first, then at most ±1 / ±2 neighbouring slots.
+ * Exact time first, then at most one neighbouring slot in either direction.
  * Distant lookbacks were caching the wrong image under the requested stamp,
  * which made the animation appear to skip frames.
  */
@@ -787,8 +806,6 @@ export async function fetchAndCacheFrameResilient(
     0,
     -HIMAWARI_STEP_SEC,
     HIMAWARI_STEP_SEC,
-    -2 * HIMAWARI_STEP_SEC,
-    2 * HIMAWARI_STEP_SEC,
   ];
   for (const off of offsets) {
     const t = timeUnix + off;

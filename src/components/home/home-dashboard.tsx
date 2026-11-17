@@ -1082,71 +1082,69 @@ function HomeDashboardInner({
               ) : null}
             </div>
 
-            {mode === "Static" ? (
-              <div className="relative z-[70]" ref={satMenuRef}>
-                <button
-                  type="button"
-                  aria-haspopup="listbox"
-                  aria-expanded={satMenuOpen}
-                  aria-label={`Satellite imagery: ${satProductMeta.label}`}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMapTypeMenuOpen(false);
-                    setRegionMenuOpen(false);
-                    setSatMenuOpen((open) => !open);
-                  }}
+            <div className="relative z-[70]" ref={satMenuRef}>
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={satMenuOpen}
+                aria-label={`Satellite imagery: ${satProductMeta.label}`}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMapTypeMenuOpen(false);
+                  setRegionMenuOpen(false);
+                  setSatMenuOpen((open) => !open);
+                }}
+                className={cn(
+                  "sw-chip inline-flex items-center gap-1",
+                  satMenuOpen ? "sw-chip-active" : "sw-chip-idle",
+                )}
+              >
+                Satellite imagery
+                <span className="font-normal opacity-80">
+                  · {satProductMeta.label}
+                </span>
+                <ChevronDown
                   className={cn(
-                    "sw-chip inline-flex items-center gap-1",
-                    satMenuOpen ? "sw-chip-active" : "sw-chip-idle",
+                    "h-3.5 w-3.5 opacity-80 transition",
+                    satMenuOpen && "rotate-180",
                   )}
+                  aria-hidden
+                />
+              </button>
+              {satMenuOpen ? (
+                <ul
+                  role="listbox"
+                  aria-label="Satellite product"
+                  className="absolute left-0 top-full z-[80] mt-1 max-h-72 min-w-[13rem] overflow-y-auto rounded-xl border border-white/10 bg-[#0f172a]/95 py-1 text-white shadow-xl backdrop-blur-xl"
+                  onMouseDown={(e) => e.stopPropagation()}
                 >
-                  Satellite imagery
-                  <span className="font-normal opacity-80">
-                    · {satProductMeta.label}
-                  </span>
-                  <ChevronDown
-                    className={cn(
-                      "h-3.5 w-3.5 opacity-80 transition",
-                      satMenuOpen && "rotate-180",
-                    )}
-                    aria-hidden
-                  />
-                </button>
-                {satMenuOpen ? (
-                  <ul
-                    role="listbox"
-                    aria-label="Satellite product"
-                    className="absolute left-0 top-full z-[80] mt-1 max-h-72 min-w-[13rem] overflow-y-auto rounded-xl border border-white/10 bg-[#0f172a]/95 py-1 text-white shadow-xl backdrop-blur-xl"
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    {SATELLITE_PRODUCTS.map((product) => (
-                      <li
-                        key={product.id}
-                        role="option"
-                        aria-selected={satProduct === product.id}
+                  {SATELLITE_PRODUCTS.map((product) => (
+                    <li
+                      key={product.id}
+                      role="option"
+                      aria-selected={satProduct === product.id}
+                    >
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex w-full items-center px-3 py-2 text-left text-sm font-semibold transition",
+                          satProduct === product.id
+                            ? "bg-[var(--cyan)]/20 text-[var(--cyan)]"
+                            : "text-white/80 hover:bg-white/5 hover:text-white",
+                        )}
+                        onClick={() => {
+                          setSatProduct(product.id);
+                          setSatMenuOpen(false);
+                        }}
                       >
-                        <button
-                          type="button"
-                          className={cn(
-                            "flex w-full items-center px-3 py-2 text-left text-sm font-semibold transition",
-                            satProduct === product.id
-                              ? "bg-[var(--cyan)]/20 text-[var(--cyan)]"
-                              : "text-white/80 hover:bg-white/5 hover:text-white",
-                          )}
-                          onClick={() => {
-                            setSatProduct(product.id);
-                            setSatMenuOpen(false);
-                          }}
-                        >
-                          {product.label}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
+                        {product.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
 
             <div className="relative z-[70]" ref={regionMenuRef}>
               <button

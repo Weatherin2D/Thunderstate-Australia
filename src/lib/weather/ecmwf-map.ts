@@ -8,7 +8,7 @@ import path from "path";
 import { PNG } from "pngjs";
 import { get as blobGet, put as blobPut } from "@vercel/blob";
 
-import { useHobbyBudget } from "@/lib/runtime-budget";
+import { isHobbyBudget } from "@/lib/runtime-budget";
 
 export const ECMWF_MAP_BOUNDS: [[number, number], [number, number]] = [
   [-44.0, 112.5],
@@ -22,7 +22,7 @@ const AU = {
   maxLon: ECMWF_MAP_BOUNDS[1][1],
 };
 
-const HOBBY = useHobbyBudget();
+const HOBBY = isHobbyBudget();
 
 /**
  * National sample spacing (°). Precip / convection use HIRES.
