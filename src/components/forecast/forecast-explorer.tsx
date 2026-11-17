@@ -7,8 +7,10 @@ import {
   Gauge,
   Sunrise,
   Sunset,
+  Sun,
   Thermometer,
   Wind,
+  Waves,
 } from "lucide-react";
 import { SiteShell } from "@/components/site/site-shell";
 import { LocationSearch } from "@/components/forecast/location-search";
@@ -78,7 +80,7 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
 
   const tz = data?.location.timezone || "Australia/Sydney";
   const today = data?.daily[0] ?? null;
-  const hourly = useMemo(() => data?.hourly.slice(0, 24) ?? [], [data]);
+  const hourly = useMemo(() => data?.hourly ?? [], [data]);
   const rainTimeline = useMemo(
     () => data?.hourly.slice(0, 48) ?? [],
     [data],
@@ -178,6 +180,12 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
                   {data.observation?.stationName ? (
                     <p className="mt-1 text-xs text-white/50">
                       Observations from {data.observation.stationName}
+                      {data.observation.stationId
+                        ? ` · BoM ${data.observation.stationId}`
+                        : ""}
+                      {data.observation.stationDistanceKm != null
+                        ? ` · ${formatDistance(data.observation.stationDistanceKm)} away`
+                        : ""}
                       {data.observation.observationTime
                         ? ` · ${formatClock(data.observation.observationTime, tz)}`
                         : ""}
@@ -209,7 +217,7 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
                 ) : null}
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 sm:gap-3">
                 <Stat
                   icon={<Thermometer className="h-3.5 w-3.5" />}
                   label="Feels like"
@@ -223,9 +231,29 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
                   icon={<Wind className="h-3.5 w-3.5" />}
                   label="Wind"
                   value={
-                    data.observation?.windKmh != null
-                      ? `${data.observation.windDir || ""} ${Math.round(data.observation.windKmh)} km/h`.trim()
-                      : "—"
+                    windLabel(
+                      data.observation?.windDir ?? null,
+                      data.observation?.windKmh ?? null,
+                      data.observation?.windKnots ?? null,
+                    ) ?? "—"
+                  }
+                />
+                <Stat
+                  icon={<Wind className="h-3.5 w-3.5" />}
+                  label="Peak gust"
+                  title={
+                    data.observation?.maxGustTime
+                      ? `Peak gust at ${formatClock(data.observation.maxGustTime, tz)}`
+                      : data.observation?.gustTime
+                        ? `Gust at ${formatClock(data.observation.gustTime, tz)}`
+                        : undefined
+                  }
+                  value={
+                    data.observation?.maxGustKmh != null
+                      ? `${Math.round(data.observation.maxGustKmh)} km/h`
+                      : data.observation?.gustKmh != null
+                        ? `${Math.round(data.observation.gustKmh)} km/h`
+                        : "—"
                   }
                 />
                 <Stat
@@ -246,12 +274,61 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
                       : "—"
                   }
                 />
+                <Stat
+                  icon={<Thermometer className="h-3.5 w-3.5" />}
+                  label="Observed high / low"
+                  value={
+                    data.observation?.maxTemp != null ||
+                    data.observation?.minTemp != null
+                      ? `${data.observation.maxTemp != null ? `${Math.round(data.observation.maxTemp)}°` : "—"} / ${data.observation.minTemp != null ? `${Math.round(data.observation.minTemp)}°` : "—"}`
+                      : "—"
+                  }
+                />
               </div>
-
-              {today?.extendedText ? (
-                <p className="mt-4 border-t border-white/10 pt-3 text-sm leading-relaxed text-white/80">
-                  {today.extendedText}
+              {data.observation?.maxTempTime ||
+              data.observation?.minTempTime ? (
+                <p className="mt-2 text-[10px] text-white/40">
+                  {data.observation.maxTempTime ? (
+                    <span>
+                      Observed high at{" "}
+                      {formatClock(data.observation.maxTempTime, tz)}
+                    </span>
+                  ) : null}
+                  {data.observation.maxTempTime &&
+                  data.observation.minTempTime
+                    ? " · "
+                    : ""}
+                  {data.observation.minTempTime ? (
+                    <span>
+                      Observed low at{" "}
+                      {formatClock(data.observation.minTempTime, tz)}
+                    </span>
+                  ) : null}
                 </p>
+              ) : null}
+
+              {today?.nowLabel ||
+              today?.laterLabel ||
+              today?.tempNow != null ||
+              today?.tempLater != null ? (
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
+                  {today.nowLabel || today.tempNow != null ? (
+                    <span>
+                      {today.nowLabel || "Now"}{" "}
+                      <strong className="text-white">
+                        {today.tempNow != null ? `${today.tempNow}°` : "—"}
+                      </strong>
+                    </span>
+                  ) : null}
+                  {today.laterLabel || today.tempLater != null ? (
+                    <span>
+                      {today.laterLabel || "Later"}{" "}
+                      <strong className="text-white">
+                        {today.tempLater != null ? `${today.tempLater}°` : "—"}
+                      </strong>
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
 
               {today ? (
@@ -275,6 +352,7 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
                         today.rainChance,
                         today.rainMinMm,
                         today.rainMaxMm,
+                        today.rainUnits,
                       )}
                     </strong>
                   </span>
@@ -283,7 +361,9 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
                       UV{" "}
                       <strong className="text-white">
                         {today.uvMaxIndex}
-                        {today.uvCategory ? ` ${today.uvCategory}` : ""}
+                        {today.uvCategory
+                          ? ` ${formatCategory(today.uvCategory)}`
+                          : ""}
                       </strong>
                     </span>
                   ) : null}
@@ -293,12 +373,43 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
                       <strong
                         className="text-white"
                         style={
+                          today.fireDangerDarkModeColour ||
                           today.fireDangerColour
-                            ? { color: today.fireDangerColour }
+                            ? {
+                                color:
+                                  today.fireDangerDarkModeColour ??
+                                  today.fireDangerColour ??
+                                  undefined,
+                              }
                             : undefined
                         }
                       >
                         {today.fireDanger}
+                      </strong>
+                    </span>
+                  ) : null}
+                  {today.surfDanger ? (
+                    <span>
+                      Surf{" "}
+                      <strong
+                        style={{
+                          color:
+                            today.surfDangerDarkModeColour ??
+                            today.surfDangerColour ??
+                            undefined,
+                        }}
+                        className="text-white"
+                      >
+                        {today.surfDanger}
+                      </strong>
+                    </span>
+                  ) : null}
+                  {today.uvStartTime && today.uvEndTime ? (
+                    <span>
+                      UV period{" "}
+                      <strong className="text-white">
+                        {formatClock(today.uvStartTime, tz)}–
+                        {formatClock(today.uvEndTime, tz)}
                       </strong>
                     </span>
                   ) : null}
@@ -320,32 +431,113 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
 
             {hourly.length > 0 ? (
               <section className="sw-panel p-4">
-                <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-[var(--cyan)]">
-                  Next 24 hours
-                </h3>
+                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--cyan)]">
+                    Hourly forecast
+                  </h3>
+                  <p className="text-xs text-white/45">
+                    Next {hourly.length} hours · local time
+                  </p>
+                </div>
                 <div className="sw-chip-row sm:gap-2">
                   {hourly.map((h) => (
                     <div
                       key={h.time}
-                      className="flex w-[68px] shrink-0 flex-col items-center gap-1 rounded-md border border-white/10 bg-black/20 px-1.5 py-2 text-center sm:w-[72px]"
+                      className="flex w-36 shrink-0 flex-col items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-2.5 py-2.5 text-center"
                     >
-                      <p className="text-[10px] font-semibold uppercase text-white/55">
+                      <p className="text-[10px] font-semibold uppercase text-white/45">
+                        {formatForecastDay(h.time, tz)}
+                      </p>
+                      <p className="text-xs font-semibold uppercase text-white/70">
                         {formatForecastHour(h.time, tz)}
                       </p>
                       <WeatherIcon
                         icon={h.icon}
                         night={h.isNight}
-                        className="h-5 w-5"
+                        className="h-6 w-6"
                       />
-                      <p className="text-sm font-bold text-white">
+                      <p className="text-lg font-bold leading-none text-white">
                         {h.temp != null ? `${Math.round(h.temp)}°` : "—"}
                       </p>
-                      <p className="text-[10px] text-sky-200">
-                        {h.rainChance != null ? `${h.rainChance}%` : "—"}
-                      </p>
+                      <dl className="grid w-full grid-cols-2 gap-x-2 gap-y-1 border-t border-white/10 pt-1.5 text-left">
+                        <HourlyDetail
+                          label="Feels"
+                          value={
+                            h.tempFeelsLike != null
+                              ? `${Math.round(h.tempFeelsLike)}°`
+                              : null
+                          }
+                        />
+                        <HourlyDetail
+                          label="Rain"
+                          value={
+                            h.rainChance != null ? `${h.rainChance}%` : null
+                          }
+                        />
+                        <HourlyDetail
+                          label="Amount"
+                          value={rainAmountRange(
+                            h.rainMinMm,
+                            h.rainMaxMm,
+                            h.rainUnits,
+                          )}
+                        />
+                        <HourlyDetail
+                          label="Amount odds"
+                          value={
+                            [
+                              h.rainAmount10PercentChanceMm != null
+                                ? `10% ${h.rainAmount10PercentChanceMm}${h.rainUnits}`
+                                : null,
+                              h.rainAmount25PercentChanceMm != null
+                                ? `25% ${h.rainAmount25PercentChanceMm}${h.rainUnits}`
+                                : null,
+                              h.rainAmount50PercentChanceMm != null
+                                ? `50% ${h.rainAmount50PercentChanceMm}${h.rainUnits}`
+                                : null,
+                            ]
+                              .filter((amount): amount is string => amount != null)
+                              .join(" · ") || null
+                          }
+                        />
+                        <HourlyDetail
+                          label="Wind"
+                          value={windLabel(h.windDir, h.windKmh, h.windKnots)}
+                        />
+                        <HourlyDetail
+                          label="Gust"
+                          value={
+                            h.gustKmh != null
+                              ? `${Math.round(h.gustKmh)} km/h${h.gustKnots != null ? ` · ${Math.round(h.gustKnots)} kt` : ""}`
+                              : null
+                          }
+                        />
+                        <HourlyDetail
+                          label="Humidity"
+                          value={
+                            h.humidity != null ? `${Math.round(h.humidity)}%` : null
+                          }
+                        />
+                        <HourlyDetail
+                          label="Dew point"
+                          value={
+                            h.dewPoint != null
+                              ? `${Math.round(h.dewPoint)}°`
+                              : null
+                          }
+                        />
+                        <HourlyDetail
+                          label="UV"
+                          value={h.uv != null ? String(h.uv) : null}
+                        />
+                      </dl>
                     </div>
                   ))}
                 </div>
+                <p className="mt-2 text-[10px] text-white/40">
+                  Wind and gust speeds include km/h and knots where supplied.
+                  Scroll horizontally for later periods.
+                </p>
               </section>
             ) : null}
 
@@ -398,7 +590,7 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
                           {formatForecastHour(h.time, tz)}
                         </span>
                         <span className="h-3 text-[8px] text-white/40">
-                          {mmLabel ? `${mmLabel}` : ""}
+                          {mmLabel ? `${mmLabel} ${h.rainUnits}` : ""}
                         </span>
                       </div>
                     );
@@ -422,41 +614,168 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
             {data.daily.length > 0 ? (
               <section className="sw-panel p-4">
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-[var(--cyan)]">
-                  7-day forecast
+                  Daily forecast · {data.daily.length} days
                 </h3>
                 <ul className="divide-y divide-white/10">
                   {data.daily.map((day, idx) => (
                     <li
                       key={day.date}
-                      className="flex items-center gap-2.5 py-3 first:pt-0 last:pb-0 sm:gap-3"
+                      className="space-y-2.5 py-4 first:pt-0 last:pb-0"
                     >
-                      <p className="w-16 shrink-0 text-sm font-semibold text-white sm:w-24">
-                        {idx === 0 ? "Today" : formatForecastDay(day.date, tz)}
-                      </p>
-                      <WeatherIcon
-                        icon={day.icon}
-                        night={day.isNight}
-                        className="h-6 w-6 shrink-0"
-                      />
-                      <p className="min-w-0 flex-1 truncate text-sm text-white/75 sm:whitespace-normal sm:line-clamp-2">
-                        {day.shortText || "—"}
-                      </p>
-                      <p className="hidden w-24 shrink-0 text-right text-xs text-sky-200 sm:block">
-                        {rainLabel(
-                          day.rainChance,
-                          day.rainMinMm,
-                          day.rainMaxMm,
-                        )}
-                      </p>
-                      <p className="w-[4.5rem] shrink-0 text-right text-sm font-bold text-white sm:w-24">
-                        <span className="text-white/50">
-                          {day.tempMin != null ? `${day.tempMin}°` : "—"}
+                      <div className="flex items-center gap-2.5 sm:gap-3">
+                        <p className="w-20 shrink-0 text-sm font-semibold text-white sm:w-24">
+                          {idx === 0 ? "Today" : formatForecastDay(day.date, tz)}
+                        </p>
+                        <WeatherIcon
+                          icon={day.icon}
+                          night={day.isNight}
+                          className="h-7 w-7 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-white/90">
+                            {day.shortText || "Forecast"}
+                          </p>
+                          {day.extendedText ? (
+                            <p className="mt-1 text-xs leading-relaxed text-white/65">
+                              {day.extendedText}
+                            </p>
+                          ) : null}
+                        </div>
+                        <p className="w-[4.5rem] shrink-0 text-right text-sm font-bold text-white sm:w-20">
+                          <span className="text-white/50">
+                            {day.tempMin != null ? `${day.tempMin}°` : "—"}
+                          </span>
+                          {" / "}
+                          <span className="text-[var(--cyan)]">
+                            {day.tempMax != null ? `${day.tempMax}°` : "—"}
+                          </span>
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 pl-0 text-[11px] text-white/60 sm:pl-[7.5rem]">
+                        <span>
+                          Rain{" "}
+                          <strong className="text-sky-200">
+                            {rainLabel(
+                              day.rainChance,
+                              day.rainMinMm,
+                              day.rainMaxMm,
+                              day.rainUnits,
+                            )}
+                          </strong>
                         </span>
-                        {" / "}
-                        <span className="text-[var(--cyan)]">
-                          {day.tempMax != null ? `${day.tempMax}°` : "—"}
-                        </span>
-                      </p>
+                        {day.rainChanceOfNoRainCategory ? (
+                          <span>
+                            No-rain chance{" "}
+                            <strong className="text-white/85">
+                              {formatCategory(day.rainChanceOfNoRainCategory)}
+                            </strong>
+                          </span>
+                        ) : null}
+                        {day.uvMaxIndex != null ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Sun className="h-3 w-3" aria-hidden />
+                            UV{" "}
+                            <strong className="text-white/85">
+                              {day.uvMaxIndex}
+                              {day.uvCategory
+                                ? ` · ${formatCategory(day.uvCategory)}`
+                                : ""}
+                            </strong>
+                            {day.uvStartTime && day.uvEndTime
+                              ? ` · ${formatClock(day.uvStartTime, tz)}–${formatClock(day.uvEndTime, tz)}`
+                              : ""}
+                          </span>
+                        ) : null}
+                        {day.fireDanger ? (
+                          <span>
+                            Fire danger{" "}
+                            <strong
+                              style={{
+                                color:
+                                  day.fireDangerDarkModeColour ??
+                                  day.fireDangerColour ??
+                                  undefined,
+                              }}
+                            >
+                              {day.fireDanger}
+                            </strong>
+                          </span>
+                        ) : null}
+                        {day.surfDanger ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Waves className="h-3 w-3" aria-hidden />
+                            Surf{" "}
+                            <strong
+                              style={{
+                                color:
+                                  day.surfDangerDarkModeColour ??
+                                  day.surfDangerColour ??
+                                  undefined,
+                              }}
+                            >
+                              {day.surfDanger}
+                            </strong>
+                          </span>
+                        ) : null}
+                        {day.sunrise ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Sunrise className="h-3 w-3" aria-hidden />
+                            {formatClock(day.sunrise, tz)}
+                          </span>
+                        ) : null}
+                        {day.sunset ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Sunset className="h-3 w-3" aria-hidden />
+                            {formatClock(day.sunset, tz)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {day.rainAmount25PercentChanceMm != null ||
+                      day.rainAmount50PercentChanceMm != null ||
+                      day.rainAmount75PercentChanceMm != null ||
+                      day.nowLabel ||
+                      day.laterLabel ? (
+                        <div className="pl-0 text-[10px] leading-relaxed text-white/45 sm:pl-[7.5rem]">
+                          {day.rainAmount25PercentChanceMm != null ||
+                          day.rainAmount50PercentChanceMm != null ||
+                          day.rainAmount75PercentChanceMm != null ? (
+                            <p>
+                              BoM rain amount guidance (25/50/75% chance):{" "}
+                              {[
+                                day.rainAmount25PercentChanceMm != null
+                                  ? `25% ${day.rainAmount25PercentChanceMm} ${day.rainUnits}`
+                                  : null,
+                                day.rainAmount50PercentChanceMm != null
+                                  ? `50% ${day.rainAmount50PercentChanceMm} ${day.rainUnits}`
+                                  : null,
+                                day.rainAmount75PercentChanceMm != null
+                                  ? `75% ${day.rainAmount75PercentChanceMm} ${day.rainUnits}`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                          ) : null}
+                          {day.nowLabel || day.laterLabel ? (
+                            <p>
+                              {day.nowLabel && day.tempNow != null
+                                ? `${day.nowLabel}: ${day.tempNow}°`
+                                : ""}
+                              {day.nowLabel &&
+                              day.laterLabel &&
+                              day.tempNow != null &&
+                              day.tempLater != null
+                                ? " · "
+                                : ""}
+                              {day.laterLabel && day.tempLater != null
+                                ? `${day.laterLabel}: ${day.tempLater}°`
+                                : ""}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -468,7 +787,15 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
               {data.issueTime
                 ? ` · Issued ${formatClock(data.issueTime, tz)}`
                 : ""}
-              . Official forecasts may change — always check BoM for warnings.
+              {data.nextIssueTime
+                ? ` · Next update expected ${formatClock(data.nextIssueTime, tz)}`
+                : ""}
+              {data.hourlyIssueTime &&
+              data.hourlyIssueTime !== data.issueTime
+                ? ` · Hourly issued ${formatClock(data.hourlyIssueTime, tz)}`
+                : ""}
+              . Independent display, not operated or endorsed by BoM. Official
+              forecasts may change — check BoM for warnings.
             </p>
           </div>
         ) : null}
@@ -477,17 +804,83 @@ export function ForecastExplorer({ geohash = null, region = null }: Props) {
   );
 }
 
+function formatCategory(value: string): string {
+  return value
+    .replace(/veryhigh/gi, "very high")
+    .replace(/verylow/gi, "very low")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDistance(distanceKm: number): string {
+  if (distanceKm < 1) return `${Math.round(distanceKm * 1000)} m`;
+  return `${Math.round(distanceKm * 10) / 10} km`;
+}
+
+function rainAmountRange(
+  min: number | null,
+  max: number | null,
+  units: string,
+): string | null {
+  if (min == null && max == null) return null;
+  if (min != null && max != null && min !== max) {
+    return `${min}–${max} ${units}`;
+  }
+  return `${max ?? min} ${units}`;
+}
+
+function windLabel(
+  direction: string | null,
+  kmh: number | null,
+  knots: number | null,
+): string | null {
+  let speed: string;
+  if (kmh != null) {
+    speed = `${Math.round(kmh)} km/h${knots != null ? ` · ${Math.round(knots)} kt` : ""}`;
+  } else if (knots != null) {
+    speed = `${Math.round(knots)} kt`;
+  } else {
+    return null;
+  }
+  return [direction, speed].filter(Boolean).join(" ");
+}
+
+function HourlyDetail({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
+  if (!value) return null;
+  return (
+    <div className="min-w-0">
+      <dt className="text-[9px] uppercase tracking-wide text-white/35">
+        {label}
+      </dt>
+      <dd className="truncate text-[10px] font-semibold text-white/75">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 function Stat({
   icon,
   label,
   value,
+  title,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  title?: string;
 }) {
   return (
-    <div className="rounded-md border border-white/10 bg-black/15 px-3 py-2.5">
+    <div
+      className="rounded-md border border-white/10 bg-black/15 px-3 py-2.5"
+      title={title}
+    >
       <p className="mb-1 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-white/55">
         {icon}
         {label}

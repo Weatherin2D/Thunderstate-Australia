@@ -33,15 +33,26 @@ export type BomDailyForecast = {
   shortText: string;
   extendedText: string;
   icon: string;
+  rainUnits: string;
   rainChance: number | null;
+  rainChanceOfNoRainCategory: string | null;
   rainMinMm: number | null;
   rainMaxMm: number | null;
+  rainAmount25PercentChanceMm: number | null;
+  rainAmount50PercentChanceMm: number | null;
+  rainAmount75PercentChanceMm: number | null;
   uvCategory: string | null;
   uvMaxIndex: number | null;
+  uvStartTime: string | null;
+  uvEndTime: string | null;
   sunrise: string | null;
   sunset: string | null;
   fireDanger: string | null;
   fireDangerColour: string | null;
+  fireDangerDarkModeColour: string | null;
+  surfDanger: string | null;
+  surfDangerColour: string | null;
+  surfDangerDarkModeColour: string | null;
   nowLabel: string | null;
   laterLabel: string | null;
   tempNow: number | null;
@@ -53,16 +64,25 @@ export type BomHourlyForecast = {
   time: string;
   temp: number | null;
   tempFeelsLike: number | null;
+  dewPoint: number | null;
   icon: string;
   isNight: boolean;
+  rainUnits: string;
   rainChance: number | null;
   rainMinMm: number | null;
   rainMaxMm: number | null;
+  rainAmount10PercentChanceMm: number | null;
+  rainAmount25PercentChanceMm: number | null;
+  rainAmount50PercentChanceMm: number | null;
   windKmh: number | null;
+  windKnots: number | null;
   windDir: string | null;
   gustKmh: number | null;
+  gustKnots: number | null;
   humidity: number | null;
   uv: number | null;
+  nextForecastPeriod: string | null;
+  nextThreeHourlyForecastPeriod: string | null;
 };
 
 export type BomObservation = {
@@ -70,9 +90,20 @@ export type BomObservation = {
   tempFeelsLike: number | null;
   humidity: number | null;
   windKmh: number | null;
+  windKnots: number | null;
   windDir: string | null;
+  gustKmh: number | null;
+  gustTime: string | null;
+  maxGustKmh: number | null;
+  maxGustTime: string | null;
+  maxTemp: number | null;
+  maxTempTime: string | null;
+  minTemp: number | null;
+  minTempTime: string | null;
   rainSince9am: number | null;
   stationName: string | null;
+  stationId: string | null;
+  stationDistanceKm: number | null;
   observationTime: string | null;
 };
 
@@ -82,6 +113,8 @@ export type LocationForecastPayload = {
   daily: BomDailyForecast[];
   hourly: BomHourlyForecast[];
   issueTime: string | null;
+  hourlyIssueTime: string | null;
+  nextIssueTime: string | null;
   attribution: string;
 };
 
@@ -166,6 +199,26 @@ function str(v: unknown): string | null {
   return t ? t : null;
 }
 
+function dangerDetails(
+  value: unknown,
+  fallback?: unknown,
+): { text: string | null; colour: string | null; darkModeColour: string | null } {
+  const row =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+  return {
+    text:
+      str(row.text) ||
+      str(row.label) ||
+      str(row.category) ||
+      str(value) ||
+      str(fallback),
+    colour: str(row.default_colour),
+    darkModeColour: str(row.dark_mode_colour),
+  };
+}
+
 export async function searchBomLocations(
   query: string,
   limit = 8,
@@ -244,6 +297,8 @@ function mapDaily(row: Record<string, unknown>): BomDailyForecast {
     (row.astronomical as Record<string, unknown> | undefined) || {};
   const fire =
     (row.fire_danger_category as Record<string, unknown> | undefined) || {};
+  const fireDanger = dangerDetails(fire, row.fire_danger);
+  const surfDanger = dangerDetails(row.surf_danger);
   const now = (row.now as Record<string, unknown> | undefined) || {};
 
   return {
@@ -253,15 +308,32 @@ function mapDaily(row: Record<string, unknown>): BomDailyForecast {
     shortText: str(row.short_text) || "",
     extendedText: str(row.extended_text) || "",
     icon: str(row.icon_descriptor) || "mostly_sunny",
+    rainUnits: str(amount.units) || str(rain.units) || "mm",
     rainChance: num(rain.chance),
+    rainChanceOfNoRainCategory: str(rain.chance_of_no_rain_category),
     rainMinMm: num(amount.min) ?? num(amount.lower_range),
     rainMaxMm: num(amount.max) ?? num(amount.upper_range),
+    rainAmount25PercentChanceMm: num(
+      rain.precipitation_amount_25_percent_chance,
+    ),
+    rainAmount50PercentChanceMm: num(
+      rain.precipitation_amount_50_percent_chance,
+    ),
+    rainAmount75PercentChanceMm: num(
+      rain.precipitation_amount_75_percent_chance,
+    ),
     uvCategory: str(uv.category),
     uvMaxIndex: num(uv.max_index),
+    uvStartTime: str(uv.start_time),
+    uvEndTime: str(uv.end_time),
     sunrise: str(astro.sunrise_time),
     sunset: str(astro.sunset_time),
-    fireDanger: str(fire.text) || str(row.fire_danger),
-    fireDangerColour: str(fire.default_colour),
+    fireDanger: fireDanger.text,
+    fireDangerColour: fireDanger.colour,
+    fireDangerDarkModeColour: fireDanger.darkModeColour,
+    surfDanger: surfDanger.text,
+    surfDangerColour: surfDanger.colour,
+    surfDangerDarkModeColour: surfDanger.darkModeColour,
     nowLabel: str(now.now_label),
     laterLabel: str(now.later_label),
     tempNow: num(now.temp_now),
@@ -278,16 +350,45 @@ function mapHourly(row: Record<string, unknown>): BomHourlyForecast {
     time: String(row.time || ""),
     temp: num(row.temp),
     tempFeelsLike: num(row.temp_feels_like),
+    dewPoint: num(row.dew_point),
     icon: str(row.icon_descriptor) || "mostly_sunny",
     isNight: Boolean(row.is_night),
+    rainUnits: str(amount.units) || str(rain.units) || "mm",
     rainChance: num(rain.chance),
     rainMinMm: num(amount.min),
     rainMaxMm: num(amount.max),
+    rainAmount10PercentChanceMm: num(
+      rain.precipitation_amount_10_percent_chance,
+    ),
+    rainAmount25PercentChanceMm: num(
+      rain.precipitation_amount_25_percent_chance,
+    ),
+    rainAmount50PercentChanceMm: num(
+      rain.precipitation_amount_50_percent_chance,
+    ),
     windKmh: num(wind.speed_kilometre),
+    windKnots: num(wind.speed_knot),
     windDir: str(wind.direction),
     gustKmh: num(wind.gust_speed_kilometre),
+    gustKnots: num(wind.gust_speed_knot),
     humidity: num(row.relative_humidity),
     uv: num(row.uv),
+    nextForecastPeriod: str(row.next_forecast_period),
+    nextThreeHourlyForecastPeriod: str(row.next_three_hourly_forecast_period),
+  };
+}
+
+function measure(
+  value: unknown,
+): { value: number | null; time: string | null } {
+  if (typeof value === "number") return { value: num(value), time: null };
+  if (!value || typeof value !== "object") {
+    return { value: null, time: null };
+  }
+  const row = value as Record<string, unknown>;
+  return {
+    value: num(row.value) ?? num(row.speed_kilometre),
+    time: str(row.time),
   };
 }
 
@@ -298,14 +399,31 @@ function mapObservation(
   if (!data) return null;
   const wind = (data.wind as Record<string, unknown> | undefined) || {};
   const station = (data.station as Record<string, unknown> | undefined) || {};
+  const gust = measure(data.gust);
+  const maxGust = measure(data.max_gust);
+  const maxTemp = measure(data.max_temp);
+  const minTemp = measure(data.min_temp);
+  const stationDistance = num(station.distance);
   return {
     temp: num(data.temp),
     tempFeelsLike: num(data.temp_feels_like),
     humidity: num(data.humidity),
     windKmh: num(wind.speed_kilometre),
+    windKnots: num(wind.speed_knot),
     windDir: str(wind.direction),
+    gustKmh: gust.value,
+    gustTime: gust.time,
+    maxGustKmh: maxGust.value,
+    maxGustTime: maxGust.time,
+    maxTemp: maxTemp.value,
+    maxTempTime: maxTemp.time,
+    minTemp: minTemp.value,
+    minTempTime: minTemp.time,
     rainSince9am: num(data.rain_since_9am),
     stationName: str(station.name),
+    stationId: str(station.bom_id),
+    stationDistanceKm:
+      stationDistance != null ? stationDistance / 1000 : null,
     observationTime,
   };
 }
@@ -323,10 +441,16 @@ export async function fetchLocationForecast(
   if (!location) return null;
 
   const [dailyRes, hourlyRes, obsRes] = await Promise.allSettled([
-    bomGet<{ data?: Record<string, unknown>[]; metadata?: { issue_time?: string } }>(
+    bomGet<{
+      data?: Record<string, unknown>[];
+      metadata?: { issue_time?: string; next_issue_time?: string };
+    }>(
       `${BOM_API}/locations/${encodeURIComponent(location.geohash)}/forecasts/daily`,
     ),
-    bomGet<{ data?: Record<string, unknown>[] }>(
+    bomGet<{
+      data?: Record<string, unknown>[];
+      metadata?: { issue_time?: string };
+    }>(
       `${BOM_API}/locations/${encodeURIComponent(grid)}/forecasts/hourly`,
     ),
     bomGet<{
@@ -359,6 +483,8 @@ export async function fetchLocationForecast(
     daily,
     hourly,
     issueTime: str(dailyPayload?.metadata?.issue_time),
+    hourlyIssueTime: str(hourlyPayload?.metadata?.issue_time),
+    nextIssueTime: str(dailyPayload?.metadata?.next_issue_time),
     attribution: "Bureau of Meteorology",
   };
 }
@@ -534,14 +660,19 @@ export function formatClock(
   }).format(d);
 }
 
-export function rainLabel(chance: number | null, minMm: number | null, maxMm: number | null): string {
+export function rainLabel(
+  chance: number | null,
+  minMm: number | null,
+  maxMm: number | null,
+  units = "mm",
+): string {
   if (chance == null) return "—";
   if (chance <= 0) return "0%";
   const amount =
     maxMm != null && maxMm > 0
-      ? ` · ${minMm ?? 0}–${maxMm} mm`
+      ? ` · ${minMm ?? 0}–${maxMm} ${units}`
       : minMm != null && minMm > 0
-        ? ` · ${minMm} mm`
+        ? ` · ${minMm} ${units}`
         : "";
   return `${chance}%${amount}`;
 }
