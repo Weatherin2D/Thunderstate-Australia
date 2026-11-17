@@ -265,7 +265,25 @@ export function shouldStitchRealEarth(bounds: LonLatBounds): boolean {
   return width * height > RE_SAFE_MAX_PIXELS * 0.7;
 }
 /** Target loop length (~4h at 10-minute Himawari cadence). */
-export const SATELLITE_FRAME_COUNT = 24;
+export const SATELLITE_FRAME_COUNTS = [12, 24, 36, 48] as const;
+export type SatelliteFrameCount = (typeof SATELLITE_FRAME_COUNTS)[number];
+export const SATELLITE_FRAME_COUNT: SatelliteFrameCount = 24;
+
+export function isSatelliteFrameCount(
+  value: number,
+): value is SatelliteFrameCount {
+  return SATELLITE_FRAME_COUNTS.some((count) => count === value);
+}
+
+export function parseSatelliteFrameCountParam(
+  value: string | null,
+): SatelliteFrameCount | null {
+  if (value == null) return SATELLITE_FRAME_COUNT;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && isSatelliteFrameCount(parsed)
+    ? parsed
+    : null;
+}
 
 /** Himawari full-disk step used across sat / radar matching. */
 export const HIMAWARI_STEP_SEC = 10 * 60;
@@ -540,7 +558,7 @@ export function alignTimesToRadar(
  */
 export function buildContiguousTimeline(
   latestUnix: number,
-  maxCount = SATELLITE_FRAME_COUNT,
+  maxCount: number = SATELLITE_FRAME_COUNT,
   stepSec = HIMAWARI_STEP_SEC,
 ): number[] {
   if (!Number.isFinite(latestUnix) || latestUnix <= 0 || maxCount <= 0) {
@@ -562,7 +580,7 @@ export function buildSatelliteTimeline(
   satTimesUnix: number[],
   _radarTimesUnix: number[] = [],
   stepSec = HIMAWARI_STEP_SEC,
-  maxCount = SATELLITE_FRAME_COUNT,
+  maxCount: number = SATELLITE_FRAME_COUNT,
 ): number[] {
   if (satTimesUnix.length === 0) return [];
   const latest = satTimesUnix[satTimesUnix.length - 1]!;

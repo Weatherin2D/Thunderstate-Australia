@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_SATELLITE_PRODUCT,
   HIMAWARI_STEP_SEC,
+  SATELLITE_FRAME_COUNT,
   type SatelliteProductId,
+  type SatelliteFrameCount,
   type WeatherFrame,
   type WeatherMapsPayload,
 } from "@/lib/weather/maps";
@@ -39,6 +41,7 @@ function msUntilNextTenMinuteBoundary(now = Date.now()): number {
 
 export function useWeatherMaps(
   product: SatelliteProductId = DEFAULT_SATELLITE_PRODUCT,
+  frameCount: SatelliteFrameCount = SATELLITE_FRAME_COUNT,
 ) {
   const [state, setState] = useState<State>({
     data: null,
@@ -48,6 +51,7 @@ export function useWeatherMaps(
     tipSeenAtMs: null,
   });
   const tipRef = useRef<number | null>(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     tipRef.current = null;
@@ -60,6 +64,7 @@ export function useWeatherMaps(
     ) {
       return;
     }
+    const requestId = ++requestIdRef.current;
     setState((s) => ({
       ...s,
       loading: s.data == null,
@@ -67,12 +72,15 @@ export function useWeatherMaps(
     }));
     try {
       // Product menu needs every loop — CDN Cache-Control absorbs repeats.
-      const res = await fetch("/api/weather/maps?all=1", { signal });
+      const res = await fetch(
+        `/api/weather/maps?all=1&frameCount=${frameCount}`,
+        { signal },
+      );
       if (!res.ok) {
         throw new Error(`Weather maps unavailable (${res.status})`);
       }
       const data = (await res.json()) as WeatherMapsPayload;
-      if (signal?.aborted) return;
+      if (signal?.aborted || requestId !== requestIdRef.current) return;
 
       // Only use the selected product's tip — never fall back to another
       // product's frames (that made IR look like it "switched" to Air Mass).
@@ -122,7 +130,7 @@ export function useWeatherMaps(
       };
       pumpWarm();
     } catch (err) {
-      if (signal?.aborted) return;
+      if (signal?.aborted || requestId !== requestIdRef.current) return;
       const message =
         err instanceof Error ? err.message : "Satellite loop unavailable";
       setState((s) => ({
@@ -132,7 +140,7 @@ export function useWeatherMaps(
         error: message,
       }));
     }
-  }, [product]);
+  }, [product, frameCount]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -157,6 +165,7 @@ export function useWeatherMaps(
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
+      requestIdRef.current += 1;
       ac.abort();
       window.clearInterval(intervalId);
       window.clearTimeout(boundaryTimer);

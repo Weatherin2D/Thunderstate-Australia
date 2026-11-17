@@ -58,17 +58,21 @@ import {
 import {
   DEFAULT_SATELLITE_PRODUCT,
   PLAYBACK_SPEEDS,
+  SATELLITE_FRAME_COUNT,
+  SATELLITE_FRAME_COUNTS,
   SATELLITE_PRODUCTS,
   formatFrameTimeAEST,
   frameIndexToScrub,
   getPlaybackSpeed,
   getSatelliteProduct,
+  isSatelliteFrameCount,
   pickWeatherFrame,
   satelliteFrameProxyUrl,
   scrubToFrameIndex,
   timelineEdgeLabels,
   withRadarSmooth,
   type PlaybackSpeedId,
+  type SatelliteFrameCount,
   type SatelliteProductId,
 } from "@/lib/weather/maps";
 import { cn } from "@/lib/utils";
@@ -313,6 +317,8 @@ function HomeDashboardInner({
   const [satProduct, setSatProduct] = useState<SatelliteProductId>(
     () => savedUi.satProduct,
   );
+  const [satelliteFrameCount, setSatelliteFrameCount] =
+    useState<SatelliteFrameCount>(() => savedUi.satelliteFrameCount);
   const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeedId>(
     () => savedUi.playbackSpeed,
   );
@@ -332,6 +338,7 @@ function HomeDashboardInner({
     setMapSettings(saved.mapSettings);
     setPlaybackSpeed(saved.playbackSpeed);
     setSatProduct(saved.satProduct);
+    setSatelliteFrameCount(saved.satelliteFrameCount);
     setRegionId(saved.regionId);
     if (page === "radar") setMode("Zoomable");
     else if (page === "satellite") setMode("Static");
@@ -418,6 +425,7 @@ function HomeDashboardInner({
       mode,
       regionId,
       satProduct,
+      satelliteFrameCount,
       playbackSpeed,
       chaseEnabled: layers.cells,
     });
@@ -429,6 +437,7 @@ function HomeDashboardInner({
     mode,
     regionId,
     satProduct,
+    satelliteFrameCount,
     playbackSpeed,
   ]);
 
@@ -511,7 +520,7 @@ function HomeDashboardInner({
     error: mapsError,
     lastTipAt,
     tipSeenAtMs,
-  } = useWeatherMaps(satProduct);
+  } = useWeatherMaps(satProduct, satelliteFrameCount);
 
   const showLightning = layers.lightning;
   const { strikes: lightningStrikes } = useLightning(showLightning);
@@ -668,7 +677,7 @@ function HomeDashboardInner({
   allSettledRef.current = allSettled;
 
   const hardLoopKey = useSatelliteFrames
-    ? `sat:${satProduct}:${regionId}`
+    ? `sat:${satProduct}:${regionId}:${satelliteFrameCount}`
     : useRadarLoop
       ? `radar:${regionId}`
       : "none";
@@ -1145,6 +1154,29 @@ function HomeDashboardInner({
                 </ul>
               ) : null}
             </div>
+
+            {useSatelliteFrames ? (
+              <label className="sw-chip inline-flex items-center gap-1.5 text-xs">
+                <span>Loop length</span>
+                <select
+                  aria-label="Satellite loop length"
+                  className="max-w-[7.5rem] cursor-pointer bg-transparent text-white outline-none"
+                  value={satelliteFrameCount}
+                  onChange={(event) => {
+                    const count = Number(event.target.value);
+                    if (isSatelliteFrameCount(count)) {
+                      setSatelliteFrameCount(count);
+                    }
+                  }}
+                >
+                  {SATELLITE_FRAME_COUNTS.map((count) => (
+                    <option key={count} value={count} className="bg-[#0f172a]">
+                      {count} frames · {count / 6}h
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <div className="relative z-[70]" ref={regionMenuRef}>
               <button

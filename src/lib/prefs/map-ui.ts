@@ -26,13 +26,17 @@ import {
   DEFAULT_PLAYBACK_SPEED,
   DEFAULT_SATELLITE_PRODUCT,
   PLAYBACK_SPEEDS,
+  SATELLITE_FRAME_COUNT,
+  isSatelliteFrameCount,
   SATELLITE_PRODUCTS,
+  type SatelliteFrameCount,
   type PlaybackSpeedId,
   type SatelliteProductId,
 } from "@/lib/weather/maps";
 
 /** Bump when storage shape / defaults change. */
-const STORAGE_KEY = "skywatch.map-ui.v4";
+const STORAGE_KEY = "skywatch.map-ui.v5";
+const PREVIOUS_STORAGE_KEY = "skywatch.map-ui.v4";
 /** Previous single-blob key — migrated into home + satellite once. */
 const LEGACY_STORAGE_KEY = "skywatch.map-ui.v3";
 const RADAR_SITES_DEFAULT_MIGRATION_KEY = "skywatch.map-ui.radar-sites-default.v1";
@@ -45,6 +49,7 @@ export type MapUiPrefs = {
   mode: MapMode;
   regionId: MapRegionId;
   satProduct: SatelliteProductId;
+  satelliteFrameCount: SatelliteFrameCount;
   playbackSpeed: PlaybackSpeedId;
   chaseEnabled: boolean;
 };
@@ -68,6 +73,7 @@ export function defaultsForMapPage(page: MapPageId): MapUiPrefs {
       mode: "Zoomable",
       regionId: DEFAULT_MAP_REGION,
       satProduct: DEFAULT_SATELLITE_PRODUCT,
+      satelliteFrameCount: SATELLITE_FRAME_COUNT,
       playbackSpeed: DEFAULT_PLAYBACK_SPEED,
       chaseEnabled: layers.cells,
     };
@@ -80,6 +86,7 @@ export function defaultsForMapPage(page: MapPageId): MapUiPrefs {
       mode: "Static",
       regionId: DEFAULT_MAP_REGION,
       satProduct: DEFAULT_SATELLITE_PRODUCT,
+      satelliteFrameCount: SATELLITE_FRAME_COUNT,
       playbackSpeed: DEFAULT_PLAYBACK_SPEED,
       chaseEnabled: layers.cells,
     };
@@ -92,6 +99,7 @@ export function defaultsForMapPage(page: MapPageId): MapUiPrefs {
     mode: "Static",
     regionId: DEFAULT_MAP_REGION,
     satProduct: DEFAULT_SATELLITE_PRODUCT,
+    satelliteFrameCount: SATELLITE_FRAME_COUNT,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     chaseEnabled: layers.cells,
   };
@@ -149,6 +157,11 @@ function parsePagePrefs(
     typeof raw.satProduct === "string" && PRODUCT_IDS.has(raw.satProduct)
       ? (raw.satProduct as SatelliteProductId)
       : defaults.satProduct;
+  const satelliteFrameCount =
+    typeof raw.satelliteFrameCount === "number" &&
+    isSatelliteFrameCount(raw.satelliteFrameCount)
+      ? raw.satelliteFrameCount
+      : defaults.satelliteFrameCount;
   const playbackSpeed =
     typeof raw.playbackSpeed === "string" && SPEED_IDS.has(raw.playbackSpeed)
       ? (raw.playbackSpeed as PlaybackSpeedId)
@@ -173,6 +186,7 @@ function parsePagePrefs(
     mode,
     regionId,
     satProduct,
+    satelliteFrameCount,
     playbackSpeed,
     chaseEnabled,
   };
@@ -197,6 +211,19 @@ function readStore(): StoredMapUi {
         window.localStorage.setItem(RADAR_SITES_DEFAULT_MIGRATION_KEY, "1");
       }
       return parsed;
+    }
+
+    const previous = window.localStorage.getItem(PREVIOUS_STORAGE_KEY);
+    if (previous) {
+      const parsed = JSON.parse(previous) as StoredMapUi;
+      if (!parsed || typeof parsed !== "object") return {};
+      const migrated: StoredMapUi = {
+        home: parsePagePrefs(parsed.home, "home"),
+        radar: parsePagePrefs(parsed.radar, "radar"),
+        satellite: parsePagePrefs(parsed.satellite, "satellite"),
+      };
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
     }
 
     // One-time migrate v3 single-blob → home + satellite slots.

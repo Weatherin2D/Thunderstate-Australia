@@ -10,10 +10,12 @@ import {
   getSatelliteProduct,
   isSatelliteProductId,
   parseRealEarthTimeToken,
+  parseSatelliteFrameCountParam,
   rainviewerTileUrl,
   satelliteFrameProxyUrl,
   toIsoZ,
   type SatelliteProductId,
+  type SatelliteFrameCount,
   type SatelliteProductMeta,
   type WeatherFrame,
   type WeatherMapsPayload,
@@ -34,7 +36,7 @@ const GIBS_STEP_MS = HIMAWARI_STEP_SEC * 1000;
 const GIBS_PROBE_MAX = isHobbyBudget() ? 8 : 18;
 const GIBS_PROBE_BATCH = isHobbyBudget() ? 2 : 4;
 const GIBS_PROBE_WIDTH = 96;
-const FRAME_COUNT = SATELLITE_FRAME_COUNT;
+const FRAME_COUNT: SatelliteFrameCount = SATELLITE_FRAME_COUNT;
 
 type RainViewerMaps = {
   generated?: number;
@@ -117,7 +119,7 @@ async function findLatestGibsTime(
 
 async function fetchRealEarthTimes(
   realearthProduct: string,
-  count = FRAME_COUNT,
+  count: SatelliteFrameCount = FRAME_COUNT,
 ): Promise<number[]> {
   try {
     const res = await fetch(
@@ -158,7 +160,7 @@ function buildFramesFromTimes(
 function buildFramesAtLatest(
   product: SatelliteProductId,
   latestMs: number,
-  count = FRAME_COUNT,
+  count: SatelliteFrameCount = FRAME_COUNT,
 ): WeatherFrame[] {
   return buildFramesFromTimes(
     product,
@@ -186,24 +188,25 @@ async function buildProductFrames(
   meta: SatelliteProductMeta,
   sharedTimelineUnix: number[] | null,
   fallbackLatestMs: number | null,
+  frameCount: SatelliteFrameCount = FRAME_COUNT,
 ): Promise<WeatherFrame[]> {
   if (sharedTimelineUnix && sharedTimelineUnix.length >= 3) {
     return buildFramesFromTimes(meta.id, sharedTimelineUnix);
   }
 
   if (!isRealEarthDisabled() && meta.realearthProduct) {
-    const native = await fetchRealEarthTimes(meta.realearthProduct, FRAME_COUNT);
+    const native = await fetchRealEarthTimes(meta.realearthProduct, frameCount);
     if (native.length >= 3) {
       const tip = native[native.length - 1]!;
       return buildFramesFromTimes(
         meta.id,
-        buildContiguousTimeline(tip, FRAME_COUNT),
+        buildContiguousTimeline(tip, frameCount),
       );
     }
   }
 
   if (fallbackLatestMs != null) {
-    return buildFramesAtLatest(meta.id, fallbackLatestMs);
+    return buildFramesAtLatest(meta.id, fallbackLatestMs, frameCount);
   }
   return [];
 }
@@ -212,7 +215,7 @@ async function buildProductFrames(
  * Shared RealEarth-led Himawari spine (contiguous 10-minute stamps).
  * GIBS is only a tip/fallback — never thin the loop to RainViewer radar.
  */
-async function buildAllSatelliteProducts(): Promise<{
+async function buildAllSatelliteProducts(frameCount: SatelliteFrameCount): Promise<{
   products: WeatherMapsPayload["satellite"]["products"];
   source: WeatherMapsPayload["satellite"]["source"];
 }> {
@@ -221,7 +224,7 @@ async function buildAllSatelliteProducts(): Promise<{
   const infraredMeta = getSatelliteProduct("infrared");
   const infraredTimes =
     !isRealEarthDisabled() && infraredMeta.realearthProduct != null
-      ? await fetchRealEarthTimes(infraredMeta.realearthProduct, FRAME_COUNT)
+      ? await fetchRealEarthTimes(infraredMeta.realearthProduct, frameCount)
       : [];
 
   const gibsLatestMs =
@@ -237,7 +240,7 @@ async function buildAllSatelliteProducts(): Promise<{
       ? infraredTimes[infraredTimes.length - 1]!
       : Math.floor((gibsLatestMs ?? fallbackLatestMs()) / 1000);
 
-  const sharedTimeline = buildContiguousTimeline(tipUnix, FRAME_COUNT);
+  const sharedTimeline = buildContiguousTimeline(tipUnix, frameCount);
 
   const built = await Promise.all(
     SATELLITE_PRODUCTS.map(async (meta) => {
@@ -245,6 +248,7 @@ async function buildAllSatelliteProducts(): Promise<{
         meta,
         sharedTimeline,
         gibsLatestMs ?? tipUnix * 1000,
+        frameCount,
       );
       return [meta.id, frames] as const;
     }),
@@ -270,6 +274,15 @@ async function buildAllSatelliteProducts(): Promise<{
 
 export async function GET(request: NextRequest) {
   try {
+    const frameCount = parseSatelliteFrameCountParam(
+      request.nextUrl.searchParams.get("frameCount"),
+    );
+    if (frameCount == null) {
+      return NextResponse.json(
+        { error: "Unsupported satellite frame count" },
+        { status: 400 },
+      );
+    }
     const rawProduct = request.nextUrl.searchParams.get("product") ?? "";
     const wantAll =
       rawProduct === "all" ||
@@ -306,12 +319,12 @@ export async function GET(request: NextRequest) {
     );
 
     const satellite = wantAll
-      ? await buildAllSatelliteProducts()
+      ? await buildAllSatelliteProducts(frameCount)
       : await (async () => {
           const products = emptyProductFrames();
           const meta = getSatelliteProduct(product);
           const native = !isRealEarthDisabled() && meta.realearthProduct
-            ? await fetchRealEarthTimes(meta.realearthProduct, FRAME_COUNT)
+            ? await fetchRealEarthTimes(meta.realearthProduct, frameCount)
             : [];
           const gibsLatestMs =
             native.length >= 3
@@ -326,8 +339,9 @@ export async function GET(request: NextRequest) {
           products[product] = {
             frames: await buildProductFrames(
               meta,
-              buildContiguousTimeline(tipUnix, FRAME_COUNT),
+              buildContiguousTimeline(tipUnix, frameCount),
               gibsLatestMs ?? tipUnix * 1000,
+              frameCount,
             ),
           };
           return {

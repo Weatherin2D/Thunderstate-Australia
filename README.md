@@ -135,7 +135,7 @@ Copy the `https://….trycloudflare.com` link it prints. Keep that terminal open
 | Route | Status |
 |-------|--------|
 | `/` | Thunderstate homepage — local weather, Bureau of Meteorology forecasts, satellite images, radar, storm activity, and forecast comparisons |
-| `/satellite` | Himawari satellite loops (IR, visible, shortwave, air mass, dust, day/night microphysics) |
+| `/satellite` | Himawari satellite loops (IR, visible, shortwave, air mass, dust, day/night microphysics) with a 12/24/36/48-frame loop-length selector |
 | `/models` | Multi-model map lab (ECMWF / ICON / GFS) — product picker, diff mode, click values, meteogram, mini Skew-T, transect cross-section |
 | `/model-comparison` | Multi-day ECMWF / ICON / GFS comparison (Open-Meteo) |
 | `/ensemble` | ECMWF ensemble spaghetti (2 m temp / precip) for saved place |
@@ -156,7 +156,7 @@ Copy the `https://….trycloudflare.com` link it prints. Keep that terminal open
 | `/api/weather/archive/synoptic` | Archived / on-demand synoptic GeoJSON |
 | `/api/weather/archive/lightning` | Archived lightning strikes (`from`/`to`) |
 | `/api/weather/archive/ingest` | Archive ingest (daily Vercel Cron + lazy on catalog visits; Hobby plan limit) |
-| `/api/weather/maps` | Satellite frame catalog (`?all=1` or `?product=…`) via NASA GIBS + SSEC RealEarth |
+| `/api/weather/maps` | Satellite frame catalog (`?all=1` or `?product=…`; optional `frameCount=12|24|36|48`, default 24) via NASA GIBS + SSEC RealEarth |
 | `/api/weather/frame` | Proxied/cached full-frame satellite imagery for smooth playback |
 | `/api/weather/lightning` | Blitzortung live (WS/MQTT) + LightningMaps Mercator PNG backfill |
 | `/api/weather/storm-activity` | Lightning hotspot summary for Storm Tracker |
@@ -186,7 +186,7 @@ Copy the `https://….trycloudflare.com` link it prints. Keep that terminal open
 
 **Warning categories:** Critical (detailed severe thunderstorm; very dangerous severe thunderstorm / severe weather) · Severe (severe thunderstorm / severe weather; major flood warnings) · Moderate (flood warnings (moderate, minor); flood watches (major, moderate)) · Minor (flood watches (minor); marine wind warnings).
 
-**Local preferences (no auth/DB):** saved place, warning-alert settings, and map UI prefs live in `localStorage`. Overlays (radar, lightning, synoptic, stations), cartography toggles (including radar smoothing and lightning style), mode, region, satellite product, playback speed, chase mode, and archive loop settings restore when you reopen the site. Shareable query params (`region`, `mode`, `radar`, `lightning`, `synoptic`, `product`, …) still override saved prefs when present.
+**Local preferences (no auth/DB):** saved place, warning-alert settings, and map UI prefs live in `localStorage`. Overlays (radar, lightning, synoptic, stations), cartography toggles (including radar smoothing and lightning style), mode, region, satellite product and loop length, playback speed, chase mode, and archive loop settings restore when you reopen the site. Shareable query params (`region`, `mode`, `radar`, `lightning`, `synoptic`, `product`, …) still override saved prefs when present.
 
 **Community:** posts (images, captions, likes, comments, dates) use durable storage so they survive deploys. Preference order: Upstash Redis (`KV_REST_API_URL` + `KV_REST_API_TOKEN`) → healthy Vercel Blob → local `/tmp` (dev only). On Vercel, mutations refuse ephemeral `/tmp` and return 503 if no durable backend is available. Likes also keep a per-browser toggle in `localStorage`. Admin delete: sign in with `COMMUNITY_ADMIN_SECRET` to show a red X on each post and comment, then enter the secret again to confirm each delete.
 
