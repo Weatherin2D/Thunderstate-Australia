@@ -581,16 +581,38 @@ function HomeDashboardInner({
         imageBounds: region.bounds,
       }));
     }
-    if (useRadarLoop) return radarFrames;
+    if (useRadarLoop) return radarFrames.slice(-satelliteFrameCount);
     return [];
   }, [
     useSatelliteFrames,
     useRadarLoop,
     satelliteFrames,
     radarFrames,
+    satelliteFrameCount,
     satProduct,
     regionId,
     region.bounds,
+  ]);
+
+  const radarLoopFrames = useMemo(() => {
+    if (useRadarLoop) return loopFrames;
+    if (useSatelliteFrames && loopFrames.length > 0 && radarFrames.length > 0) {
+      const matched = new Map<number, (typeof radarFrames)[number]>();
+      for (const frame of loopFrames) {
+        const radarFrame =
+          pickWeatherFrame(radarFrames, frame.time, 30 * 60) ??
+          radarFrames[radarFrames.length - 1]!;
+        matched.set(radarFrame.time, radarFrame);
+      }
+      return [...matched.values()].sort((a, b) => a.time - b.time);
+    }
+    return radarFrames.slice(-satelliteFrameCount);
+  }, [
+    useRadarLoop,
+    useSatelliteFrames,
+    loopFrames,
+    radarFrames,
+    satelliteFrameCount,
   ]);
 
   const activeFrame = loopFrames[frameIndex] ?? null;
@@ -679,7 +701,7 @@ function HomeDashboardInner({
   const hardLoopKey = useSatelliteFrames
     ? `sat:${satProduct}:${regionId}:${satelliteFrameCount}`
     : useRadarLoop
-      ? `radar:${regionId}`
+      ? `radar:${regionId}:${satelliteFrameCount}`
       : "none";
   const tipTime = loopFrames[loopFrames.length - 1]?.time ?? 0;
 
@@ -1155,7 +1177,7 @@ function HomeDashboardInner({
               ) : null}
             </div>
 
-            {useSatelliteFrames ? (
+            {useTimeline ? (
               <label className="sw-chip inline-flex items-center gap-1.5 text-xs">
                 <span>Loop length</span>
                 <select
@@ -1171,7 +1193,7 @@ function HomeDashboardInner({
                 >
                   {SATELLITE_FRAME_COUNTS.map((count) => (
                     <option key={count} value={count} className="bg-[#0f172a]">
-                      {count} frames · {count / 6}h
+                      {count} frames
                     </option>
                   ))}
                 </select>
@@ -1298,13 +1320,13 @@ function HomeDashboardInner({
               mapSatelliteImageBounds={
                 himawariOnMap ? (activeFrame?.imageBounds ?? null) : null
               }
-              radarLoopFrames={showRadarOverlay ? radarFrames : undefined}
+              radarLoopFrames={showRadarOverlay ? radarLoopFrames : undefined}
               radarFrameIndex={
                 useRadarLoop
                   ? frameIndex
                   : Math.max(
                       0,
-                      radarFrames.findIndex(
+                      radarLoopFrames.findIndex(
                         (f) => f.time === overlayRadarFrame?.time,
                       ),
                     )

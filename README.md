@@ -139,7 +139,7 @@ Copy the `https://….trycloudflare.com` link it prints. Keep that terminal open
 | `/models` | Multi-model map lab (ECMWF / ICON / GFS) — product picker, diff mode, click values, meteogram, mini Skew-T, transect cross-section |
 | `/model-comparison` | Multi-day ECMWF / ICON / GFS comparison (Open-Meteo) |
 | `/ensemble` | ECMWF ensemble spaghetti (2 m temp / precip) for saved place |
-| `/radar` | Active Cell Tracker overlay (`?chase=1&cell=`) — scores, projected paths, details |
+| `/radar` | Radar playback with configurable loop length; Active Cell Tracker overlay (`?chase=1&cell=`) — scores, projected paths, details |
 | `/warnings` | BoM warnings, or Automated thunderstorm cells via `?source=auto` |
 | `/warnings/auto/[cellId]` | Thunderstate thunderstorm estimate details |
 | `/soundings` | Observed UWYO radiosondes, model Skew-T, and 3×3 model sounding boxes |
@@ -156,7 +156,7 @@ Copy the `https://….trycloudflare.com` link it prints. Keep that terminal open
 | `/api/weather/archive/synoptic` | Archived / on-demand synoptic GeoJSON |
 | `/api/weather/archive/lightning` | Archived lightning strikes (`from`/`to`) |
 | `/api/weather/archive/ingest` | Archive ingest (daily Vercel Cron + lazy on catalog visits; Hobby plan limit) |
-| `/api/weather/maps` | Satellite frame catalog (`?all=1` or `?product=…`; optional `frameCount=12|24|36|48`, default 24) via NASA GIBS + SSEC RealEarth |
+| `/api/weather/maps` | Satellite catalog (`?all=1` or `?product=…`; optional `frameCount=12|24|36|48`, default 24) via NASA GIBS + SSEC RealEarth, plus RainViewer radar frames |
 | `/api/weather/frame` | Proxied/cached full-frame satellite imagery for smooth playback |
 | `/api/weather/lightning` | Blitzortung live (WS/MQTT) + LightningMaps Mercator PNG backfill |
 | `/api/weather/storm-activity` | Lightning hotspot summary for Storm Tracker |
