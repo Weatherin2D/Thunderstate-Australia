@@ -217,6 +217,17 @@ function readProductFromUrl(): ModelRiskProduct {
   return resolveModelRiskProduct(sp.get("product"));
 }
 
+function riskCatalogUrl(
+  source: RiskSource,
+  product: ModelRiskProduct,
+): string {
+  const params = new URLSearchParams({ source });
+  if (isModelSource(source) && product !== "risk") {
+    params.set("product", product);
+  }
+  return `/api/weather/risk?${params}`;
+}
+
 function syncUrl(
   source: RiskSource,
   product: ModelRiskProduct,
@@ -266,20 +277,17 @@ function sourceBlurb(source: RiskSource, product: ModelRiskProduct): string {
   if (source === "bom") {
     return "Official Bureau of Meteorology thunderstorm forecast, showing areas where storms are possible or likely.";
   }
-  const model = riskSourceName(source);
-  const meta = PRODUCT_META[product];
-  return `Thunderstate ${model} estimate — ${meta.description}`;
+  return `${riskSourceName(source)} — ${PRODUCT_META[product].description}`;
 }
 
 function sourceLoadingLabel(
   source: RiskSource,
-  _product: ModelRiskProduct,
+  product: ModelRiskProduct,
 ): string {
   if (source === "bom") {
     return "Loading the Bureau of Meteorology thunderstorm forecast…";
   }
-  const model = riskSourceName(source);
-  return `Still loading national ${model} data…`;
+  return `Loading ${riskSourceName(source)} · ${PRODUCT_META[product].label}…`;
 }
 
 function sourceEmptyFallback(
@@ -344,17 +352,20 @@ export function RiskDashboard() {
   >(null);
   const [activeLegendId, setActiveLegendId] = useState<string | null>(null);
   const [engineMode, setEngineMode] = useState<EngineUiMode>("predict");
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
-    setSource(readSourceFromUrl());
-    setProduct(readProductFromUrl());
+    const initialSource = readSourceFromUrl();
+    setSource(initialSource);
+    setProduct(initialSource === "bom" ? "risk" : readProductFromUrl());
     setEngineMode(readEngineFromUrl());
   }, []);
 
-  // Load once per source — all products are scored server-side in one compute.
-  // Product tabs switch client-side (legend helpers + risk-image product qs).
+  // Model products share one server-side compute but have product-specific
+  // availability, legends, and empty states.
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     async function load() {
       setLoading(true);
       setError(null);
@@ -363,10 +374,11 @@ export function RiskDashboard() {
         let lastErr: Error | null = null;
         // Cold model computes can 504 on Vercel — retry briefly for shared cache.
         for (let attempt = 0; attempt < 3; attempt++) {
-          if (cancelled) return;
+          if (cancelled || controller.signal.aborted) return;
           try {
-            res = await fetch(`/api/weather/risk?source=${source}`, {
-              cache: "default",
+            res = await fetch(riskCatalogUrl(source, product), {
+              cache: retryNonce > 0 ? "reload" : "default",
+              signal: controller.signal,
             });
             if (res.ok) break;
             lastErr = new Error(
@@ -375,6 +387,7 @@ export function RiskDashboard() {
                 : "Could not load risk outlook",
             );
           } catch (err) {
+            if (controller.signal.aborted) return;
             lastErr = err instanceof Error ? err : new Error("Failed to load");
             res = null;
           }
@@ -384,7 +397,7 @@ export function RiskDashboard() {
           throw lastErr ?? new Error("Could not load risk outlook");
         }
         const json = (await res.json()) as RiskCatalog;
-        if (cancelled) return;
+        if (cancelled || controller.signal.aborted) return;
         const outlook =
           json.outlook ??
           ({
@@ -421,20 +434,21 @@ export function RiskDashboard() {
           );
         });
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && !controller.signal.aborted) {
           setError(err instanceof Error ? err.message : "Failed to load");
           setData(null);
           setCatalog(null);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !controller.signal.aborted) setLoading(false);
       }
     }
     void load();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [source]);
+  }, [source, product, retryNonce]);
 
   const active = useMemo(() => {
     if (!data?.days?.length) return null;
@@ -503,12 +517,20 @@ export function RiskDashboard() {
     const nextProduct = next === "bom" ? "risk" : product;
     setSource(next);
     if (next === "bom") setProduct("risk");
+    setCatalog(null);
+    setData(null);
+    setError(null);
+    setLoading(true);
     syncUrl(next, nextProduct, engineMode);
     setSelectedDay(null);
   };
 
   const setProductAndUrl = (next: ModelRiskProduct) => {
     setProduct(next);
+    setCatalog(null);
+    setData(null);
+    setError(null);
+    setLoading(true);
     syncUrl(source, next, engineMode);
     setSelectedDay(null);
   };
@@ -763,104 +785,66 @@ export function RiskDashboard() {
           </div>
 
           <div className="relative h-[min(68vh,720px)] min-h-[360px] overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+            <HomeMapDynamic
+              mode="Zoomable"
+              regionId={regionId}
+              mapSettings={RISK_MAP_SETTINGS}
+              showRadarOverlay={false}
+              showLightning={false}
+              showSynoptic={false}
+              riskFeatures={[]}
+              riskImageUrl={riskImageUrl}
+              riskImageBounds={BOM_METEYE_IMAGE_BOUNDS}
+              riskImageDisplay="geo"
+              riskImageOpacity={0.82}
+              onMapClick={onMapClick}
+              probePoint={
+                probePoint
+                  ? {
+                      lat: probePoint.lat,
+                      lng: probePoint.lng,
+                      label:
+                        inspectData?.kind === "point"
+                          ? inspectData.category.label
+                          : "Inspect",
+                    }
+                  : null
+              }
+            />
             {loading ? (
-              <div className="flex h-full items-center justify-center text-sm text-white/60">
+              <div
+                role="status"
+                aria-live="polite"
+                className="pointer-events-none absolute left-1/2 top-3 z-[550] -translate-x-1/2 rounded-full border border-white/15 bg-[#0b1224]/90 px-3 py-1.5 text-center text-xs text-white/75 shadow-lg backdrop-blur-md"
+              >
                 {sourceLoadingLabel(source, product)}
               </div>
-            ) : error ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
-                <p className="font-[family-name:var(--font-display)] text-2xl text-white">
-                  Outlook unavailable
-                </p>
-                <p className="text-sm text-white/55">{error}</p>
-                <button
-                  type="button"
-                  className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
-                  onClick={() => {
-                    setError(null);
-                    setLoading(true);
-                    // Bump product state identity via selectedDay null + reload
-                    // by toggling a nonce through source re-fetch.
-                    setSelectedDay(null);
-                    setCatalog(null);
-                    setData(null);
-                    void fetch(`/api/weather/risk?source=${source}`, {
-                      cache: "reload",
-                    })
-                      .then(async (res) => {
-                        if (!res.ok) throw new Error("Could not load risk outlook");
-                        const json = (await res.json()) as RiskCatalog;
-                        const outlook =
-                          json.outlook ??
-                          ({
-                            status: json.status,
-                            issuedAt: json.issuedAt,
-                            mapView: { center: [-25.5, 134.5], zoom: 4 },
-                            days: (json.days ?? []).map((d) => ({
-                              effectiveDay: d.day,
-                              storedDay: d.day,
-                              validDate: d.dateLabel,
-                              label: d.label,
-                              dateLabel: d.dateLabel,
-                              isToday: d.day === 1,
-                              features: [],
-                              legend: d.legend ?? [],
-                              source: "categorical" as const,
-                            })),
-                            defaultDay: 1,
-                            message: json.message,
-                          } satisfies PublicForecastResponse);
-                        setCatalog(json);
-                        setData(outlook);
-                        setSelectedDay(
-                          outlook.days.find(
-                            (d) => d.effectiveDay === outlook.defaultDay,
-                          )?.effectiveDay ??
-                            outlook.days[0]?.effectiveDay ??
-                            null,
-                        );
-                      })
-                      .catch((err) => {
-                        setError(
-                          err instanceof Error
-                            ? err.message
-                            : "Could not load risk outlook",
-                        );
-                      })
-                      .finally(() => setLoading(false));
-                  }}
-                >
-                  Try again
-                </button>
+            ) : null}
+            {error ? (
+              <div className="pointer-events-none absolute inset-0 z-[600] flex items-center justify-center bg-[#07101f]/45 px-4 text-center backdrop-blur-[2px]">
+                <div className="pointer-events-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border border-white/15 bg-[#0b1224]/95 p-5 shadow-xl">
+                  <p className="font-[family-name:var(--font-display)] text-2xl text-white">
+                    Outlook unavailable
+                  </p>
+                  <p className="text-sm text-white/55">{error}</p>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+                    onClick={() => {
+                      setError(null);
+                      setLoading(true);
+                      setSelectedDay(null);
+                      setCatalog(null);
+                      setData(null);
+                      setRetryNonce((nonce) => nonce + 1);
+                    }}
+                  >
+                    Try again
+                  </button>
+                </div>
               </div>
             ) : (
               <>
-                <HomeMapDynamic
-                  mode="Zoomable"
-                  regionId={regionId}
-                  mapSettings={RISK_MAP_SETTINGS}
-                  showRadarOverlay={false}
-                  showLightning={false}
-                  showSynoptic={false}
-                  riskFeatures={[]}
-                  riskImageUrl={riskImageUrl}
-                  riskImageBounds={BOM_METEYE_IMAGE_BOUNDS}
-                  riskImageDisplay="geo"
-                  riskImageOpacity={0.82}
-                  onMapClick={onMapClick}
-                  probePoint={
-                    probePoint
-                      ? {
-                          lat: probePoint.lat,
-                          lng: probePoint.lng,
-                          label:
-                            inspectData?.kind === "point"
-                              ? inspectData.category.label
-                              : "Inspect",
-                        }
-                      : null
-                  }
-                />
                 <RiskInspectPanel
                   loading={inspectLoading}
                   error={inspectError}
@@ -868,7 +852,7 @@ export function RiskDashboard() {
                   onClose={clearInspect}
                 />
                 {!loading && !inspectData && !inspectLoading ? (
-                  <div className="pointer-events-none absolute left-3 top-3 z-[520] rounded-full border border-white/15 bg-[#0b1224]/8 px-3 py-1 text-[11px] text-white/65 backdrop-blur-md">
+                  <div className="pointer-events-none absolute left-3 top-3 z-[520] rounded-full border border-white/15 bg-[#0b1224]/80 px-3 py-1 text-[11px] text-white/65 backdrop-blur-md">
                     Tap the map to inspect a colour
                   </div>
                 ) : null}
