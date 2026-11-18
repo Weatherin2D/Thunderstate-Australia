@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -226,6 +226,12 @@ export function EcmwfModelsDashboard() {
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [frameLoading, setFrameLoading] = useState(false);
   const [frameQuality, setFrameQuality] = useState<"lo" | "hi">("lo");
+  const [displayedFrameUrl, setDisplayedFrameUrl] = useState<string | null>(
+    null,
+  );
+  const [frameRetry, setFrameRetry] = useState(0);
+  const [frameError, setFrameError] = useState<string | null>(null);
+  const displayedFrameUrlRef = useRef<string | null>(null);
   const [framePaintedOnce, setFramePaintedOnce] = useState(false);
   const [nationalWarming, setNationalWarming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -261,6 +267,15 @@ export function EcmwfModelsDashboard() {
   const [xsec, setXsec] = useState<CrossSectionPayload | null>(null);
   const [xsecLoading, setXsecLoading] = useState(false);
   const [xsecError, setXsecError] = useState<string | null>(null);
+
+  useEffect(
+    () => () => {
+      if (displayedFrameUrlRef.current) {
+        URL.revokeObjectURL(displayedFrameUrlRef.current);
+      }
+    },
+    [],
+  );
 
   const loadCatalog = useCallback(
     async (product: string, model: MapModelId, signal?: AbortSignal) => {
@@ -362,30 +377,51 @@ export function EcmwfModelsDashboard() {
 
   useEffect(() => {
     if (!imageUrl) return;
-    // Only block scrub/play on lo (first paint). Hi upgrade is background.
-    if (frameQuality === "lo") {
-      setFrameLoading(true);
-      setNationalWarming(true);
-    }
-    const img = new Image();
-    img.onload = () => {
+    const ac = new AbortController();
+    void Promise.resolve().then(async () => {
+      if (ac.signal.aborted) return;
+      setFrameError(null);
       if (frameQuality === "lo") {
+        setFrameLoading(true);
+        setNationalWarming(true);
+      }
+      try {
+        const res = await fetch(imageUrl, {
+          cache: "default",
+          signal: ac.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`Map frame unavailable (${res.status})`);
+        }
+        if (res.headers.get("X-Ecmwf-Empty") === "1") {
+          throw new Error("No forecast grid was returned for this frame");
+        }
+        const objectUrl = URL.createObjectURL(await res.blob());
+        if (ac.signal.aborted) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        const previousUrl = displayedFrameUrlRef.current;
+        displayedFrameUrlRef.current = objectUrl;
+        setDisplayedFrameUrl(objectUrl);
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+        setFramePaintedOnce(true);
+        if (frameQuality === "lo") {
+          setFrameLoading(false);
+          setNationalWarming(false);
+          setFrameQuality("hi");
+        }
+      } catch (err) {
+        if (ac.signal.aborted) return;
         setFrameLoading(false);
         setNationalWarming(false);
-        setFramePaintedOnce(true);
-        setFrameQuality("hi");
-      } else {
-        setFramePaintedOnce(true);
+        setFrameError(
+          err instanceof Error ? err.message : "Map frame unavailable",
+        );
       }
-    };
-    img.onerror = () => {
-      if (frameQuality === "lo") {
-        setFrameLoading(false);
-        setNationalWarming(false);
-      }
-    };
-    img.src = imageUrl;
-  }, [imageUrl, frameQuality]);
+    });
+    return () => ac.abort();
+  }, [imageUrl, frameQuality, frameRetry]);
 
   // Server owns neighbour prefetch — do not double-fire Image loads here.
   // Advance play only after the current frame has loaded.
@@ -875,7 +911,7 @@ export function EcmwfModelsDashboard() {
                 mode="Zoomable"
                 regionId="national"
                 mapSettings={MAP_SETTINGS}
-                riskImageUrl={imageUrl}
+                riskImageUrl={displayedFrameUrl}
                 riskImageBounds={catalog?.bounds ?? MAP_BOUNDS}
                 riskImageDisplay="geo"
                 riskImageOpacity={0.78}
@@ -972,9 +1008,21 @@ export function EcmwfModelsDashboard() {
                   onClose={() => setShowSkewt(false)}
                 />
               ) : null}
-              {error ? (
-                <div className="absolute inset-x-3 bottom-16 z-[500] rounded-lg border border-red-400/30 bg-[#0a1224]/90 px-3 py-2 text-sm text-white/90">
-                  {error}
+              {frameError || error ? (
+                <div
+                  role="alert"
+                  className="absolute inset-x-3 bottom-16 z-[500] flex items-center justify-between gap-3 rounded-lg border border-red-400/30 bg-[#0a1224]/90 px-3 py-2 text-sm text-white/90"
+                >
+                  <span>{frameError ?? error}</span>
+                  {frameError ? (
+                    <button
+                      type="button"
+                      className="shrink-0 font-semibold text-[var(--cyan)] hover:underline"
+                      onClick={() => setFrameRetry((attempt) => attempt + 1)}
+                    >
+                      Retry
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>

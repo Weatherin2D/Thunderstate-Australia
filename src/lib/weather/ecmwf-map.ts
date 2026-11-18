@@ -643,9 +643,11 @@ async function fetchBatch(
       if (res.status === 429) {
         lastErr = new Error("Open-Meteo 429");
         const retryAfter = Number(res.headers.get("retry-after"));
-        await sleep(
-          Number.isFinite(retryAfter) ? retryAfter * 1000 : 1800 * (attempt + 1),
-        );
+        const delay =
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1000
+            : 1800 * (attempt + 1);
+        await sleep(Math.min(8000, delay));
         continue;
       }
       if (!res.ok) {
@@ -664,11 +666,32 @@ async function fetchBatch(
             hourly?: Record<string, unknown[]>;
           }>;
       const rows = Array.isArray(json) ? json : [json];
-      return rows.map((r, i) => ({
+      if (rows.length !== lats.length) {
+        throw new Error(
+          `Open-Meteo returned ${rows.length} of ${lats.length} grid points`,
+        );
+      }
+      const results = rows.map((r, i) => ({
         latitude: num(r.latitude) ?? lats[i]!,
         longitude: num(r.longitude) ?? lons[i]!,
         hourly: (r.hourly ?? {}) as Record<string, unknown[]>,
       }));
+      const expectedFields = fields.split(",");
+      for (const result of results) {
+        const times = result.hourly.time;
+        if (
+          !Array.isArray(times) ||
+          times.length === 0 ||
+          expectedFields.some(
+            (field) =>
+              !Array.isArray(result.hourly[field]) ||
+              result.hourly[field]!.length !== times.length,
+          )
+        ) {
+          throw new Error("Open-Meteo returned incomplete hourly grid data");
+        }
+      }
+      return results;
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err));
     }
@@ -704,26 +727,29 @@ async function loadProductGrid(
   for (let i = 0; i < batches.length; i += BATCH_CONCURRENCY) {
     const wave = batches.slice(i, i + BATCH_CONCURRENCY);
     const results = await Promise.all(
-      wave.map(async (b) => {
-        try {
-          return await fetchBatch(b.lats, b.lons, fields, model);
-        } catch {
-          return [] as Awaited<ReturnType<typeof fetchBatch>>;
-        }
-      }),
+      wave.map((b) => fetchBatch(b.lats, b.lons, fields, model)),
     );
     for (let bi = 0; bi < results.length; bi++) {
       const locs = results[bi]!;
       const b = wave[bi]!;
+      const batchTimes = locs[0]?.hourly.time as unknown[] | undefined;
+      if (!batchTimes?.length) {
+        throw new Error("Open-Meteo returned no hourly times for a grid batch");
+      }
+      const normalizedTimes = batchTimes.map(String);
+      if (
+        times.length &&
+        (times.length !== normalizedTimes.length ||
+          times.some((time, index) => time !== normalizedTimes[index]))
+      ) {
+        throw new Error("Open-Meteo returned inconsistent hourly grid times");
+      }
+      if (!times.length) times = normalizedTimes;
       for (let j = 0; j < b.lats.length; j++) {
         const loc = locs[j];
         const hourly = loc?.hourly ?? {};
         const series = (hourly[product.field] ?? []) as unknown[];
         const wxSeries = (hourly.weather_code ?? []) as unknown[];
-        const t = (hourly.time ?? []) as unknown[];
-        if (!times.length && t.length) {
-          times = t.map(String);
-        }
         rawSites.push({
           lat: b.lats[j]!,
           lon: b.lons[j]!,
